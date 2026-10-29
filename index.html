@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<meta name="theme-color" content="#1b1535">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Idle Monster Tower</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header id="hud">
+  <div class="coins">🪙 <b id="coins">0</b></div>
+  <div class="rate"><span id="rate">0</span>/s</div>
+  <div class="fl">🗼 <b id="fl">1</b></div>
+</header>
+<main id="view"></main>
+<nav id="tabs">
+  <button data-act="tab" data-t="home">🏠<small>Home</small></button>
+  <button data-act="tab" data-t="mons">📖<small>Monsters</small></button>
+  <button data-act="tab" data-t="tower">🗼<small>Tower</small></button>
+  <button data-act="tab" data-t="set">⚙️<small>Settings</small></button>
+</nav>
+<div id="modal" hidden></div>
+<div id="toast" hidden></div>
+<script src="sync.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
