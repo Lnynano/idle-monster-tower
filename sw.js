@@ -1,4 +1,4 @@
-const V = 'imt-v6';
+const V = 'imt-v7';
 const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg'];
 
 self.addEventListener('install', e => {

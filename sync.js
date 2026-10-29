@@ -8,7 +8,9 @@ const SB_KEY = 'sb_publishable_ye6sDYTBJLjjMgAbRggKpA_PSmZjnKQ'; // public key; 
 const AUTH_KEY = 'imt_auth_v1', SYNC_EVERY = 60e3;
 
 let auth = null, syncing = false, syncMsg = 'Not synced yet', codeFor = '', pendingRemote = null;
-try { auth = JSON.parse(localStorage.getItem(AUTH_KEY)); } catch (e) { }
+try { auth = JSON.parse(localStorage.getItem(AUTH_KEY)); codeFor = localStorage.getItem('imt_otp_email') || ''; } catch (e) { }
+// remember the email a code was sent to, so the code box survives a reload
+function setCodeFor(v) { codeFor = v; try { v ? localStorage.setItem('imt_otp_email', v) : localStorage.removeItem('imt_otp_email'); } catch (e) { } }
 
 function setAuth(a) {
   auth = a;
@@ -99,7 +101,7 @@ SYNC_ACT.sendcode = async () => {
   if (!navigator.onLine) return toast('You are offline');
   try {
     await sb('/auth/v1/otp?redirect_to=' + encodeURIComponent(location.origin + location.pathname), { method: 'POST', body: { email, create_user: true } });
-    codeFor = email; refreshPanel(); toast('Check your email');
+    setCodeFor(email); refreshPanel(); toast('Check your email');
   } catch (e) { toast('Could not send: ' + e.message); }
 };
 SYNC_ACT.verify = async () => {
@@ -107,7 +109,7 @@ SYNC_ACT.verify = async () => {
   if (!code) return;
   try {
     setAuth(sessionOf(await sb('/auth/v1/verify', { method: 'POST', body: { type: 'email', email: codeFor, token: code } })));
-    codeFor = ''; refreshPanel(); toast('Signed in'); sync();
+    setCodeFor(''); refreshPanel(); toast('Signed in'); sync();
   } catch (e) { toast('Wrong or expired code'); }
 };
 SYNC_ACT.syncnow = () => sync();
@@ -116,15 +118,14 @@ SYNC_ACT.signout = () => {
   const a = auth; setAuth(null); S.cloud = null; save(); refreshPanel();
   if (a) fetch(SB_URL + '/auth/v1/logout', { method: 'POST', headers: { apikey: SB_KEY, Authorization: 'Bearer ' + a.access_token } }).catch(() => { });
 };
-SYNC_ACT.changemail = () => { codeFor = ''; refreshPanel(); };
+SYNC_ACT.changemail = () => { setCodeFor(''); refreshPanel(); };
 
 function syncPanel() {
   let body;
   if (auth) body = `<p>Signed in as <b>${esc(auth.email || '?')}</b></p><p id="syncst">${esc(syncMsg)}</p>
     <div class="ctl"><button data-act="syncnow">Sync now</button><button class="btn alt" data-act="signout">Sign out</button></div>`;
-  else if (codeFor) body = `<p>Sign-in link sent to <b>${esc(codeFor)}</b>. Open it on this device, in this browser.</p>
-    <small>Email has a code instead? Enter it here.</small>
-    <input id="sbcode" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code (optional)">
+  else if (codeFor) body = `<p>Email sent to <b>${esc(codeFor)}</b>. Enter the 6-digit code, or open the link on this device.</p>
+    <input id="sbcode" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code">
     <div class="ctl"><button data-act="verify">Verify</button><button class="btn alt" data-act="changemail">Change email</button></div>`;
   else body = `<p>Sign in to back up and play on several devices.</p>
     <input id="sbmail" type="email" autocomplete="email" placeholder="you@example.com">
