@@ -37,6 +37,8 @@ const SYL = {
 const SUF = ['ling', 'ox', 'ix', 'ador', 'ofin', 'ette', 'urk', 'aw', 'yn', 'umba', 'ito', 'ar'];
 // fusion by base rarity: success chance and coin cost
 const FUSE = [{ p: .8, c: 100 }, { p: .6, c: 600 }, { p: .4, c: 3600 }];
+// ascend: reset a run for permanent shards; each shard +1% monster stats, +5% coins
+const ASCEND_AT = 25;
 
 // ---------- helpers ----------
 const $ = s => document.querySelector(s);
@@ -61,7 +63,7 @@ function mult(a, d) {
 }
 
 // ---------- state ----------
-const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null });
+const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null, shards: 0, ascends: 0, top: 1 });
 let S, last, cur = 'home', B = null;
 
 function sanitize(o) {
@@ -70,6 +72,7 @@ function sanitize(o) {
   s.coins = n(o.coins, s.coins); s.gen = Math.floor(n(o.gen, 0));
   s.floor = Math.floor(n(o.floor, 1, 1)); s.best = Math.max(s.floor, Math.floor(n(o.best, 1, 1)));
   s.hatched = Math.floor(n(o.hatched, 0)); s.saved = n(o.saved, Date.now());
+  s.shards = Math.floor(n(o.shards, 0)); s.ascends = Math.floor(n(o.ascends, 0)); s.top = Math.max(s.best, Math.floor(n(o.top, 1, 1)));
   let maxId = 0;
   s.eggs = (Array.isArray(o.eggs) ? o.eggs : []).filter(e => e && ELS[e.el] && EGG[e.tier]).map(e => { maxId = Math.max(maxId, e.id | 0); return { id: e.id | 0, el: e.el, tier: e.tier }; });
   s.mons = (Array.isArray(o.mons) ? o.mons : []).filter(m => m && ELS[m.el] && TRAITS[m.trait] && m.rar >= 0 && m.rar <= 3 && [m.bh, m.ba, m.sp].every(Number.isFinite)).map(m => {
@@ -91,11 +94,13 @@ function save() { try { tick(); S.saved = Date.now(); localStorage.setItem(SAVE_
 const monById = id => S.mons.find(m => m.id === id);
 const teamMons = () => S.team.map(monById).filter(Boolean);
 const goldMul = () => 1 + 0.12 * teamMons().filter(m => m.trait === 'gold').length;
-const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.02 * S.mons.length) * (1 + 0.05 * (S.best - 1)) * goldMul();
+const shardCoin = () => 1 + 0.05 * S.shards;
+const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.02 * S.mons.length) * (1 + 0.05 * (S.best - 1)) * goldMul() * shardCoin();
 const genCost = () => Math.floor(25 * Math.pow(1.2, S.gen));
 const lvCost = m => Math.floor(60 * Math.pow(1.2, m.lvl - 1) * RMUL[m.rar]);
-const reward = f => Math.floor(15 * Math.pow(1.13, f - 1) * goldMul());
-function stats(m) { const k = Math.pow(1.045, m.lvl - 1); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
+const reward = f => Math.floor(15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin());
+const shardGain = () => S.best < ASCEND_AT ? 0 : Math.floor(Math.pow(S.best - 20, 1.3) / 4);
+function stats(m) { const k = Math.pow(1.045, m.lvl - 1) * (1 + 0.01 * S.shards); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
 
 function tick() {
   const now = Date.now(); let dt = now - last; last = now;
@@ -172,6 +177,16 @@ function fuse(aId, bId) {
   setTimeout(() => modal(`<h3>${ok ? 'Fusion succeeded!' : 'Fusion failed'}</h3>${card(a, '', true)}<p>${ok ? `${esc(a.name)} is now ${RARS[a.rar]}.` : `${esc(b.name)} was lost.`}</p><button data-act="close">OK</button>`), 1000);
 }
 
+// ---------- ascend ----------
+function ascend() {
+  const g = shardGain(); if (!g || B) return;
+  if (!confirm(`Ascend for 💎${g}?\n\nResets coins, generator, floor and monster levels.\nKeeps monsters, rarity, eggs and shards.`)) return;
+  S.shards += g; S.ascends++; S.top = Math.max(S.top, S.best);
+  S.coins = 100; S.gen = 0; S.floor = 1; S.best = 1;
+  S.mons.forEach(m => m.lvl = 1);
+  save(); render(); toast(`Ascended! 💎${S.shards} total`);
+}
+
 // ---------- battle ----------
 function enemies(f) {
   const r = mulberry(f * 7919 + 13), boss = f % 10 === 0, k = (boss ? 1.3 : 1) * Math.min(1, .5 + f * .07), dl = Math.min(.5, Math.max(0, (f - 15) * .03));
@@ -209,7 +224,16 @@ function fight() {
   if (res.win) { S.coins += rw; S.floor++; S.best = Math.max(S.best, S.floor); }
   save();
   B = { U, init, ev: res.ev, idx: 0, win: res.win, rw, f, cur: init, log: [], done: false, t: 0 };
-  render(); B.t = setInterval(step, 450);
+  render(); B.t = setInterval(step, 450 / speed);
+}
+// battle playback speed, per device
+let speed = 1;
+try { speed = [1, 2, 4].includes(+localStorage.getItem('imt_speed')) ? +localStorage.getItem('imt_speed') : 1; } catch (e) { }
+function cycleSpeed() {
+  speed = speed === 4 ? 1 : speed * 2;
+  try { localStorage.setItem('imt_speed', speed); } catch (e) { }
+  if (B && !B.done) { clearInterval(B.t); B.t = setInterval(step, 450 / speed); }
+  const b = $('#spd'); if (b) b.textContent = speed + '×';
 }
 function logLine(e) {
   const a = B.U[e.a], d = B.U[e.d];
@@ -253,7 +277,7 @@ function vArena() {
   return `<h2>Floor ${B.f}</h2><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
   <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>
   <div class="log" id="log">${B.log.map(l => `<div>${l}</div>`).join('')}</div>
-  ${B.done ? res : '<div class="ctl"><button data-act="skip">Skip ⏩</button></div>'}`;
+  ${B.done ? res : `<div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button data-act="skip">Skip ⏩</button></div>`}`;
 }
 
 // ---------- views ----------
@@ -271,9 +295,15 @@ function vHome() {
 }
 function vMons() {
   if (!S.mons.length) return '<p>No monsters yet. Buy and hatch an egg on Home.</p>';
-  const l = [...S.mons].sort((a, b) => b.rar - a.rar || b.lvl - a.lvl || a.id - b.id);
-  return `<p>${S.mons.length} owned · tap for details / level up</p><div class="grid">${l.map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>`;
+  const pw = m => { const s = stats(m); return s.hp * s.atk; };
+  const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
+  const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
+  const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
+  return `<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
+  <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
+  <p>${l.length} of ${S.mons.length} · tap for details, level up, fuse</p><div class="grid">${l.map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>`;
 }
+let monEl = 'all', monSort = 'rar';
 function vTower() {
   if (B) return vArena();
   const E = enemies(S.floor), boss = S.floor % 10 === 0;
@@ -283,7 +313,10 @@ function vTower() {
   <div class="row">${E.map(u => `<div class="unit el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${u.hp} ⚔${u.atk}</small></div>`).join('')}</div>
   <h3>Your team</h3><div class="row">${slots}</div>
   <div class="ctl"><button data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ Fight</button><button class="btn alt" data-act="auto" style="background:#ffffff22;color:inherit">Auto-pick best</button></div>
-  <p class="legend">🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>`;
+  <p class="legend">🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>
+  <section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
+    <p>Each 💎: +1% monster stats, +5% coins. Ascending resets coins, generator, floor and levels. Monsters, rarity and eggs stay.</p>
+    ${shardGain() ? `<button data-act="ascend">Ascend for 💎${shardGain()}</button>` : `<p>Unlocks at floor ${ASCEND_AT}.${S.top > 1 ? ` All-time best: ${S.top}.` : ''}</p>`}</section>`;
 }
 function vSet() {
   return `${syncPanel()}<section class="card"><h3>Save code</h3><p>Copy to back up or move to another device.</p>
@@ -341,6 +374,10 @@ const ACT = {
   auto: autoPick,
   fight,
   skip,
+  speed: cycleSpeed,
+  ascend,
+  monel: d => { monEl = d.k; render(); },
+  monsort: d => { monSort = d.k; render(); },
   cont: () => { B = null; render(); },
   close: closeModal,
   copy: () => { const t = $('#exp'); t.select(); (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(() => toast('Copied'), () => { document.execCommand('copy'); toast('Copied'); }); },
@@ -359,7 +396,7 @@ const ACT = {
   },
 };
 // acts that change progress; marks the save dirty for cloud sync
-const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset']);
+const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend']);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' && !e.target.dataset.lock) return closeModal();
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
@@ -374,5 +411,27 @@ setInterval(tick, 250);
 setInterval(save, 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else tick(); });
 addEventListener('pagehide', save);
-if ('serviceWorker' in navigator && location.protocol !== 'file:') navigator.serviceWorker.register('sw.js').catch(() => { });
 syncBoot();
+
+// ---------- updates ----------
+// a new sw.js version installs in the background; offer a reload instead of waiting for the next launch
+let newWorker = null;
+let wantReload = false;
+ACT.update = () => { save(); wantReload = true; if (newWorker) newWorker.postMessage('skip'); };
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  const hadController = !!navigator.serviceWorker.controller;
+  const offer = w => {
+    if (!w || !navigator.serviceWorker.controller) return;
+    newWorker = w; $('#upd').hidden = false;
+  };
+  navigator.serviceWorker.register('sw.js').then(reg => {
+    offer(reg.waiting);
+    reg.addEventListener('updatefound', () => {
+      const w = reg.installing;
+      w.addEventListener('statechange', () => { if (w.state === 'installed') offer(w); });
+    });
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => { }); });
+  }).catch(() => { });
+  let reloading = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => { if ((hadController || wantReload) && !reloading) { reloading = true; location.reload(); } });
+}

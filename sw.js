@@ -1,9 +1,14 @@
-const V = 'imt-v7';
-const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg'];
+// Bump V on every deploy: the new worker installs alongside the old one and the
+// page offers a reload. Each version serves only its own cache, so files never mix.
+const V = 'imt-v10';
+const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(V).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  // cache: 'reload' skips the HTTP cache so a new version gets fresh files
+  e.waitUntil(caches.open(V).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))));
 });
+
+self.addEventListener('message', e => { if (e.data === 'skip') self.skipWaiting(); });
 
 self.addEventListener('activate', e => {
   e.waitUntil(
@@ -13,17 +18,12 @@ self.addEventListener('activate', e => {
   );
 });
 
-// cache-first, refresh in background (stale-while-revalidate); offline-safe
+// cache-first; network only for misses; offline navigation falls back to the shell
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== location.origin) return;
   e.respondWith(
-    caches.match(req, { ignoreSearch: true }).then(hit => {
-      const net = fetch(req).then(r => {
-        if (r.ok) { const copy = r.clone(); caches.open(V).then(c => c.put(req, copy)); }
-        return r;
-      }).catch(() => hit || caches.match('index.html'));
-      return hit || net;
-    })
+    caches.open(V).then(c => c.match(req, { ignoreSearch: true })).then(hit =>
+      hit || fetch(req).catch(() => req.mode === 'navigate' ? caches.match('index.html') : Response.error()))
   );
 });
