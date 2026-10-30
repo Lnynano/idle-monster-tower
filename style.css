@@ -230,3 +230,16 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .unit.dead .beast,.unit.dead .eye{animation:none}
 @keyframes breathe{50%{transform:translateY(-2px) scale(1.02,.98)}}
 @keyframes blink{0%,93%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}
+/* ---------- skills ---------- */
+.en{height:5px;background:#2a1a0a;border-radius:3px;overflow:hidden;margin:2px 4px}
+.en i{display:block;height:100%;background:linear-gradient(90deg,#7ad0ff,#4a7dff);transition:width .3s}
+.unit.e .en i{background:linear-gradient(90deg,#ff9a7a,var(--bad))}
+.unit .sk{font-size:10px;color:#2d5fc4;font-weight:900}
+.unit.p[data-act]{cursor:pointer}
+.unit.ready{border-color:#4a7dff;animation:ready 1s ease-in-out infinite}
+.unit.ready .sk{color:#fff;background:#4a7dff;border-radius:6px;margin:2px 4px 0}
+.unit.ready .en i{background:linear-gradient(90deg,#fff,#7ad0ff)}
+.unit.cast .ic{animation:cast .5s ease-out}
+.pop.skillname{color:#7ad0ff;font-size:20px}
+@keyframes ready{50%{transform:translateY(-3px);box-shadow:0 7px 0 #0006,0 0 0 3px #7ad0ff}}
+@keyframes cast{0%{transform:scale(1)}40%{transform:scale(1.35) rotate(-6deg)}100%{transform:scale(1)}}

@@ -449,26 +449,71 @@ function enemies(f) {
     return { side: 'e', name: (isBoss ? 'King ' : '') + genName(r, el), icon: pick(r, ICONS[el]), el, hp, maxhp: hp, atk, spd: Math.round(8 + r() * 8 + f * .2 + (isBoss ? 4 : 0)), trait, boss: isBoss, rar: isBoss ? 3 : Math.min(2, Math.floor(f / 15)), seed: hashStr(f + ':' + i) };
   });
 }
-function simulate(U) {
-  const ev = [], alive = s => U.some(u => u.side === s && u.hp > 0);
-  for (let round = 1; round <= 60; round++) {
+// ---------- battle engine ----------
+// one action per step so the player can fire skills between steps; simulate() runs it to the end with auto skills
+const SKILLS = {
+  fire: { n: 'Inferno', d: 'Burns every enemy (0.9× ATK each)' },
+  grass: { n: 'Bloom', d: 'Heals every ally 25% HP' },
+  water: { n: 'Tsunami', d: 'Huge hit on one enemy (2.6× ATK)' },
+  dark: { n: 'Hex', d: 'Enemies deal 30% less damage; 0.5× ATK hit to all' },
+  light: { n: 'Aegis', d: 'Allies take 40% less damage for 2 rounds, heal 15%' },
+};
+// only player monsters and bosses charge skills
+const charges = u => u.side === 'p' || u.boss;
+function newBattle(U) { U.forEach(u => { u.en = 0; u.weak = false; u.shield = 0; }); return { U, queue: [], round: 0, over: false, win: false }; }
+const snap = st => ({ hp: st.U.map(u => u.hp), en: st.U.map(u => u.en) });
+function checkEnd(st) {
+  const pa = st.U.some(u => u.side === 'p' && u.hp > 0), ea = st.U.some(u => u.side === 'e' && u.hp > 0);
+  if (!pa || !ea) { st.over = true; st.win = pa && !ea; }
+}
+function hurt(a, d, base, st) {
+  const m = mult(a.el, d.el), crit = a.trait === 'fury' && Math.random() < .25;
+  const dmg = Math.max(1, Math.round(base * m * (.9 + Math.random() * .2) * (crit ? 2 : 1) * (a.weak ? .7 : 1) * (d.shield > st.round ? .6 : 1)));
+  d.hp = Math.max(0, d.hp - dmg);
+  if (charges(d)) d.en = Math.min(100, d.en + 12);
+  let heal = 0, thorn = 0;
+  if (a.trait === 'lifesteal') { heal = Math.round(dmg * .15); a.hp = Math.min(a.maxhp, a.hp + heal); }
+  if (d.trait === 'thorns') { thorn = Math.max(1, Math.round(dmg * .35)); a.hp = Math.max(0, a.hp - thorn); }
+  return { d: st.U.indexOf(d), dmg, m, crit, heal, thorn };
+}
+function castSkill(st, a) {
+  if (st.over || a.hp <= 0 || a.en < 100) return null;
+  a.en = 0;
+  const foes = st.U.filter(u => u.side !== a.side && u.hp > 0), mates = st.U.filter(u => u.side === a.side && u.hp > 0);
+  const hits = [], heals = [];
+  const heal = (u, amt) => { const h = Math.min(u.maxhp - u.hp, Math.round(amt)); u.hp += h; heals.push({ i: st.U.indexOf(u), h }); };
+  if (a.el === 'fire') foes.forEach(d => hits.push(hurt(a, d, a.atk * .9, st)));
+  if (a.el === 'grass') mates.forEach(u => heal(u, u.maxhp * .25));
+  if (a.el === 'water' && foes.length) hits.push(hurt(a, foes.reduce((x, y) => mult(a.el, y.el) > mult(a.el, x.el) || (mult(a.el, y.el) === mult(a.el, x.el) && y.hp < x.hp) ? y : x), a.atk * 2.6, st));
+  if (a.el === 'dark') foes.forEach(d => { d.weak = true; hits.push(hurt(a, d, a.atk * .5, st)); });
+  if (a.el === 'light') mates.forEach(u => { u.shield = st.round + 2; heal(u, u.maxhp * .15); });
+  checkEnd(st);
+  return { type: 'skill', a: st.U.indexOf(a), skill: a.el, hits, heals, ...snap(st) };
+}
+function stepOnce(st, auto) {
+  if (st.over) return null;
+  const U = st.U;
+  if (!st.queue.length) {
+    if (++st.round > 60) { st.over = true; st.win = false; return null; }
     const key = u => u.spd + (u.trait === 'firststrike' ? 1000 : 0);
-    for (const a of U.filter(u => u.hp > 0).sort((x, y) => key(y) - key(x))) {
-      if (a.hp <= 0) continue;
-      const foes = U.filter(u => u.side !== a.side && u.hp > 0); if (!foes.length) break;
-      // focus fire: hit the foe you're strongest against, then the weakest one
-      const d = foes.reduce((x, y) => mult(a.el, y.el) > mult(a.el, x.el) || (mult(a.el, y.el) === mult(a.el, x.el) && y.hp < x.hp) ? y : x);
-      const m = mult(a.el, d.el), crit = a.trait === 'fury' && Math.random() < .25;
-      const dmg = Math.max(1, Math.round(a.atk * m * (.9 + Math.random() * .2) * (crit ? 2 : 1)));
-      d.hp = Math.max(0, d.hp - dmg);
-      let heal = 0, thorn = 0;
-      if (a.trait === 'lifesteal') { heal = Math.round(dmg * .15); a.hp = Math.min(a.maxhp, a.hp + heal); }
-      if (d.trait === 'thorns') { thorn = Math.max(1, Math.round(dmg * .35)); a.hp = Math.max(0, a.hp - thorn); }
-      ev.push({ a: U.indexOf(a), d: U.indexOf(d), dmg, m, crit, heal, thorn, hp: U.map(u => u.hp) });
-      if (!alive('p') || !alive('e')) return { win: alive('p') && !alive('e'), ev };
-    }
+    st.queue = U.filter(u => u.hp > 0).sort((x, y) => key(y) - key(x));
   }
-  return { win: false, ev };
+  const a = st.queue.shift();
+  if (a.hp <= 0) return stepOnce(st, auto);
+  // bosses always use skills; players only when auto skills are on
+  if (charges(a) && a.en >= 100 && (a.side === 'e' || auto)) return castSkill(st, a);
+  const foes = U.filter(u => u.side !== a.side && u.hp > 0);
+  // focus fire: hit the foe you're strongest against, then the weakest one
+  const d = foes.reduce((x, y) => mult(a.el, y.el) > mult(a.el, x.el) || (mult(a.el, y.el) === mult(a.el, x.el) && y.hp < x.hp) ? y : x);
+  const h = hurt(a, d, a.atk, st);
+  if (charges(a)) a.en = Math.min(100, a.en + 25);
+  checkEnd(st);
+  return { type: 'atk', a: U.indexOf(a), ...h, ...snap(st) };
+}
+function simulate(U) {
+  const st = newBattle(U), ev = [];
+  while (!st.over) { const e = stepOnce(st, true); if (e) ev.push(e); }
+  return { win: st.win, ev };
 }
 const teamUnits = tm => tm.map(m => { const s = stats(m); return { side: 'p', name: m.name, icon: m.icon, el: m.el, hp: s.hp, maxhp: s.hp, atk: s.atk, spd: s.spd, trait: m.trait, rar: m.rar, seed: hashStr(m.id + m.name) }; });
 // estimated win chance from quick simulations, cached per team/floor state
@@ -484,18 +529,23 @@ function winChance() {
   return oddsVal;
 }
 // fight the current floor and apply its rewards; returns the result (used live and for offline auto-climb)
-function resolveFight() {
-  const U = [...enemies(S.floor), ...teamUnits(teamMons())], init = U.map(u => u.hp), f = S.floor;
-  const res = simulate(U), rw = res.win ? reward(f) : 0, chest = res.win && f % 10 === 0;
-  if (res.win) { S.coins += rw; S.floor++; S.best = Math.max(S.best, S.floor); }
+// pay out a finished floor fight
+function applyResult(f, win) {
+  const rw = win ? reward(f) : 0, chest = win && f % 10 === 0;
+  if (win) { S.coins += rw; S.floor = f + 1; S.best = Math.max(S.best, S.floor); }
   if (chest) S.eggs.push({ id: S.nextId++, el: pick(Math.random, BASIC), tier: 'premium' });
   S.changed = Date.now();
-  return { U, init, ev: res.ev, win: res.win, rw, f, chest };
+  return { rw, chest };
 }
+// instant fight with auto skills (offline auto-climb)
+function resolveFight() { const f = S.floor, res = simulate([...enemies(f), ...teamUnits(teamMons())]); return { win: res.win, f, ...applyResult(f, res.win) }; }
+// auto skills: per device; always on while auto-climbing
+let autoSk = false;
+try { autoSk = localStorage.getItem('imt_autosk') === '1'; } catch (e) { }
 function fight() {
   if (!teamMons().length || B) return;
-  const r = resolveFight(); save();
-  B = { ...r, idx: 0, cur: r.init, log: [], done: false, t: 0 };
+  const U = [...enemies(S.floor), ...teamUnits(teamMons())], st = newBattle(U);
+  B = { st, U, f: S.floor, cur: U.map(u => u.hp), en: U.map(() => 0), log: [], done: false, t: 0 };
   render(); B.t = setInterval(step, 450 / speed);
 }
 // battle playback speed, per device
@@ -508,14 +558,31 @@ function cycleSpeed() {
   const b = $('#spd'); if (b) b.textContent = speed + '×';
 }
 function logLine(e) {
-  const a = B.U[e.a], d = B.U[e.d];
+  const a = B.U[e.a];
+  if (e.type === 'skill') return `${a.icon} ${esc(a.name)} used <b>${SKILLS[e.skill].n}</b>!${e.hits.length ? ' ' + e.hits.map(h => '−' + fmt(h.dmg)).join(' ') : ''}${e.heals.length ? ' ' + e.heals.map(h => '+' + fmt(h.h) + '❤').join(' ') : ''}`;
+  const d = B.U[e.d];
   return `${a.icon} ${esc(a.name)} ➜ ${d.icon} ${esc(d.name)} −${e.dmg}${e.m > 1 ? ' 💥' : e.m < 1 ? ' 🛡' : ''}${e.crit ? ' ⚡CRIT' : ''}${e.heal ? ` +${e.heal}❤` : ''}${e.thorn ? ` (thorns −${e.thorn})` : ''}`;
 }
+// floating text over a unit
+function popAt(i, text, cls) {
+  const u = $('#u' + i); if (!u) return;
+  const b = u.getBoundingClientRect(), p = document.createElement('div');
+  p.className = 'pop ' + cls; p.textContent = text; p.style.cssText = `left:${b.left + b.width / 2 - 24}px;top:${b.top + 10}px`;
+  document.body.appendChild(p); setTimeout(() => p.remove(), 800);
+}
 function apply(e, anim) {
-  B.cur = e.hp; B.log.push(logLine(e));
+  B.cur = e.hp; B.en = e.en; B.log.push(logLine(e));
   if (cur !== 'tower') return;
   e.hp.forEach((h, i) => paintUnit(i, h));
   const lg = $('#log'); if (lg) { lg.insertAdjacentHTML('beforeend', `<div>${B.log[B.log.length - 1]}</div>`); lg.scrollTop = 1e9; }
+  if (anim && e.type === 'skill') {
+    SFX.big(); vib(40);
+    const au = $('#u' + e.a); if (au) { au.classList.remove('cast'); void au.offsetWidth; au.classList.add('cast'); }
+    popAt(e.a, SKILLS[e.skill].n.toUpperCase() + '!', 'skillname');
+    e.hits.forEach(h => { popAt(h.d, '-' + fmt(h.dmg), h.m > 1 ? 'super' : ''); const du = $('#u' + h.d); if (du) { du.classList.remove('hit'); void du.offsetWidth; du.classList.add('hit'); } });
+    e.heals.forEach(h => h.h > 0 && popAt(h.i, '+' + fmt(h.h), 'heal'));
+    return;
+  }
   if (anim) {
     (e.crit || e.m > 1 ? SFX.big : SFX.hit)();
     const du = $('#u' + e.d), au = $('#u' + e.a);
@@ -535,18 +602,38 @@ function apply(e, anim) {
 }
 function paintUnit(i, h) {
   const u = $('#u' + i); if (!u) return;
+  const en = B.en[i] || 0, bar = u.querySelector('.en i');
+  if (bar) bar.style.width = en + '%';
+  u.classList.toggle('ready', en >= 100 && h > 0 && !B.done);
   u.classList.toggle('dead', h <= 0); u.classList.toggle('low', h > 0 && h < B.U[i].maxhp * .3);
   u.querySelector('.bar i').style.width = Math.max(0, h / B.U[i].maxhp * 100) + '%';
   u.querySelector('.hp').textContent = Math.max(0, h) + '/' + B.U[i].maxhp;
 }
 function step() {
-  if (!B) return;
-  if (B.idx >= B.ev.length) return finishBattle();
-  apply(B.ev[B.idx++], true);
+  if (!B || B.done) return;
+  const e = stepOnce(B.st, autoSk || climb);
+  if (e) apply(e, true);
+  if (B.st.over) finishBattle();
 }
-function skip() { if (!B || B.done) return; clearInterval(B.t); while (B.idx < B.ev.length) apply(B.ev[B.idx++], false); finishBattle(); }
+// tap a charged monster to fire its skill
+function tapSkill(i) {
+  if (!B || B.done) return;
+  const u = B.U[i]; if (!u || u.side !== 'p') return;
+  if (u.en < 100) return toast(`${SKILLS[u.el].n} charging… ${Math.floor(u.en)}%`);
+  const e = castSkill(B.st, u); if (e) apply(e, true);
+  if (B.st.over) finishBattle();
+}
+function skip() {
+  if (!B || B.done) return;
+  clearInterval(B.t);
+  while (!B.st.over) { const e = stepOnce(B.st, true); if (e) apply(e, false); }
+  finishBattle();
+}
 function finishBattle() {
-  clearInterval(B.t); B.done = true; if (cur === 'tower') render();
+  if (B.done) return;
+  clearInterval(B.t); B.done = true; B.win = B.st.win;
+  Object.assign(B, applyResult(B.f, B.win)); save();
+  if (cur === 'tower') render();
   if (B.win) { vib(30); SFX.win(); } else SFX.lose();
   if (!climb) return;
   if (!B.win) { toast(`Auto-climb stopped at floor ${B.f}`); return; }
@@ -564,7 +651,10 @@ function toggleClimb() {
 }
 
 function arenaUnit(u, i) {
-  return `<div class="unit ${u.side} el-${u.el}${u.boss ? ' king' : ''}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${unitArt(u)}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
+  const en = B.en[i] || 0, ch = charges(u), tap = u.side === 'p' && !B.done;
+  return `<div class="unit ${u.side} el-${u.el}${u.boss ? ' king' : ''}${B.cur[i] <= 0 ? ' dead' : ''}${tap && en >= 100 && B.cur[i] > 0 ? ' ready' : ''}" id="u${i}"${tap ? ` data-act="skill" data-i="${i}"` : ''}>
+    <div class="ic">${unitArt(u)}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div>
+    ${ch ? `<div class="en"><i style="width:${en}%"></i></div>` : ''}<small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small>${u.side === 'p' ? `<small class="sk">⚡${SKILLS[u.el].n}</small>` : ''}</div>`;
 }
 function vArena() {
   const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
@@ -576,7 +666,8 @@ function vArena() {
   <div class="vs">VS</div>
   <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>${res}</div>
   <div class="log" id="log">${B.log.map(l => `<div>${l}</div>`).join('')}</div>
-  <div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button>${B.done ? '' : '<button data-act="skip">Skip ⏩</button>'}</div>`;
+  ${B.done ? '' : '<p class="legend">Tap a glowing monster to fire its ⚡ skill</p>'}
+  <div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button class="btn alt${autoSk ? ' on' : ''}" data-act="autosk">⚡ Auto ${autoSk ? 'ON' : 'OFF'}</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Climb ${climb ? 'ON' : 'OFF'}</button>${B.done ? '' : '<button data-act="skip">Skip ⏩</button>'}</div>`;
 }
 
 // ---------- views ----------
@@ -650,7 +741,7 @@ function closeModal() { $('#modal').hidden = true; }
 function detail(id) {
   const m = monById(id); if (!m) return;
   const maxed = m.lvl >= MAX_LVL, g = bulk(l => lvCostAt(m, l), m.lvl, MAX_LVL), now = stats(m), nx = statsAt(m, m.lvl + g.k);
-  modal(`${card(m, '', true)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p>
+  modal(`${card(m, '', true)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}<br>⚡ ${SKILLS[m.el].n}: ${SKILLS[m.el].d}</p>
     ${maxed ? '<p style="text-align:center">Max level</p>' : `${qtyChips()}<p style="text-align:center">Lv${m.lvl} → <b>Lv${m.lvl + g.k}</b>: ❤${fmt(now.hp)} → <b>${fmt(nx.hp)}</b> · ⚔${fmt(now.atk)} → <b>${fmt(nx.atk)}</b></p>
     <button data-act="lvl" data-id="${m.id}" data-cost="${g.c}">Level up${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`}
     <button class="btn alt" data-act="lock" data-id="${m.id}">${m.lock ? '🔓 Unlock' : '🔒 Lock (protect from fusion)'}</button>
@@ -676,6 +767,8 @@ const ACT = {
   gen: () => { const g = bulk(genCostAt, S.gen); if (S.coins < g.c) return; S.coins -= g.c; S.gen += g.k; save(); render(); },
   qty: d => { qty = d.k === 'max' ? 'max' : +d.k; try { localStorage.setItem('imt_qty', qty); } catch (e) { } const m = $('#modal'); if (!m.hidden && m.dataset.mon) detail(+m.dataset.mon); render(); },
   climb: toggleClimb,
+  skill: d => tapSkill(+d.i),
+  autosk: () => { autoSk = !autoSk; try { localStorage.setItem('imt_autosk', autoSk ? '1' : ''); } catch (e) { } const b = document.querySelector('[data-act=autosk]'); if (b) { b.classList.toggle('on', autoSk); b.textContent = `⚡ Auto ${autoSk ? 'ON' : 'OFF'}`; } },
   mute: () => { muted = !muted; try { localStorage.setItem('imt_mute', muted ? '1' : ''); } catch (e) { } if (!muted) SFX.coin(); render(); },
   lock: d => { const m = monById(+d.id); if (!m) return; m.lock = !m.lock; save(); detail(m.id); render(); },
   hatch: d => hatch(+d.id),

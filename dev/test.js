@@ -30,8 +30,8 @@ t('bulk x10 cost matches sum', `qty = 10; S.coins = 1e12; const g = bulk(genCost
 t('bulk max never overspends', `qty = 'max'; S.coins = 1000; const g = bulk(genCostAt, 0); qty = 1; return g.c <= 1000 && g.c + genCostAt(g.k) > 1000;`);
 t('hatch fills team and records species', `S.eggs.push({ id: S.nextId++, el: 'fire', tier: 'basic' }); hatchAll(); return S.mons.length === 1 && S.team.length === 1 && S.seen.length === 1 && S.shards === 1;`);
 t('new monsters hatch near team level', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 50; S.mons.push(m); S.team = [m.id]; return makeMon({ el: 'water', tier: 'basic' }).lvl === 40;`);
-t('strong team clears floor 1', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 30; S.mons.push(m); S.team = [m.id]; fight(); return B.win && S.floor === 2 && S.coins > 100;`);
-t('boss win drops premium egg', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 100; m.rar = 3; m.bh *= 3; m.ba *= 3; S.mons.push(m); S.team = [m.id]; S.floor = 10; fight(); return B.win && S.eggs.some(e => e.tier === 'premium');`);
+t('strong team clears floor 1', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 30; S.mons.push(m); S.team = [m.id]; fight(); skip(); return B.win && S.floor === 2 && S.coins > 100;`);
+t('boss win drops premium egg', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 100; m.rar = 3; m.bh *= 3; m.ba *= 3; S.mons.push(m); S.team = [m.id]; S.floor = 10; fight(); skip(); return B.win && S.eggs.some(e => e.tier === 'premium');`);
 t('feed spends xp on the level curve', `const a = makeMon({ el: 'fire', tier: 'basic' }); S.mons.push(a); S.team = [a.id]; for (let i = 0; i < 10; i++) S.mons.push(makeMon({ el: 'water', tier: 'basic' }));
   S.mons.slice(1).forEach(b => b.rar = 0); feed(a, spare(a)); return S.mons.length === 1 && a.lvl > 1 && a.xp < lvCostAt(a, a.lvl);`);
 t('locked monsters are never fodder', `const a = makeMon({ el: 'fire', tier: 'basic' }), b = makeMon({ el: 'fire', tier: 'basic' }); a.rar = b.rar = 0; b.lock = true; S.mons.push(a, b); return spare(a).length === 0;`);
@@ -51,5 +51,11 @@ t('offline auto-climb clears floors', `const m = makeMon({ el: 'fire', tier: 'ba
 t('enemy weakness hint', `return weakTo('fire') === 'water' && weakTo('dark') === 'light' && weakTo('grass') === 'fire';`);
 t('boss floor has one crowned boss', `const E = enemies(20); return E.filter(u => u.boss).length === 1 && E[1].boss && E[1].trait !== null && E[1].name.startsWith('King');`);
 
+t('no reward until a live fight ends', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 30; S.mons.push(m); S.team = [m.id]; fight(); const before = S.floor; skip(); return before === 1 && S.floor === 2;`);
+t('skills: inferno hits all, bloom heals', `const mk = (el, side) => ({ side, name: el, icon: '', el, hp: 100, maxhp: 100, atk: 10, spd: 10, trait: null });
+  const st = newBattle([mk('grass', 'e'), mk('grass', 'e'), mk('fire', 'p'), mk('grass', 'p')]); st.U[2].en = 100; const e = castSkill(st, st.U[2]);
+  st.U[3].hp = 50; st.U[3].en = 100; const g = castSkill(st, st.U[3]);
+  return e.hits.length === 2 && st.U[0].hp < 100 && st.U[1].hp < 100 && st.U[2].en === 0 && st.U[3].hp === 75 && g.heals.length === 2;`);
+t('uncharged skill does nothing', `const st = newBattle([{ side: 'e', el: 'fire', hp: 9, maxhp: 9, atk: 1, spd: 1 }, { side: 'p', el: 'water', hp: 9, maxhp: 9, atk: 1, spd: 1 }]); return castSkill(st, st.U[1]) === null;`);
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
