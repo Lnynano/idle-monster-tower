@@ -188,7 +188,7 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 ::placeholder{color:#7a5a3a;opacity:1}
 /* ---------- QoL ---------- */
 #tabs button{position:relative}
-#tabs button.dot::after{content:"";position:absolute;top:4px;right:calc(50% - 20px);width:11px;height:11px;border-radius:50%;background:var(--bad);border:2px solid var(--woodd);animation:pulse 1.4s ease-in-out infinite}
+#tabs button.dot::after{content:"";position:absolute;top:4px;right:calc(50% - 20px);width:11px;height:11px;border-radius:50%;background:var(--bad);border:2px solid var(--woodd)}
 .chips.qty{justify-content:center;margin:8px 0 0}
 .mon .lk{position:absolute;right:2px;top:0;font-size:13px}
 .mon .tm{position:absolute;left:2px;bottom:0;background:var(--bad);color:#fff;font:900 9px/1 var(--title);padding:3px 4px;border-radius:5px}
