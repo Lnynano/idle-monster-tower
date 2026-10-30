@@ -111,7 +111,8 @@ function tick() {
   hud();
 }
 function hud() {
-  $('#coins').textContent = fmt(S.coins); $('#rate').textContent = fmtRate(rate()); $('#fl').textContent = S.floor;
+  $('#coins').textContent = fmt(S.coins); $('#rate').textContent = '+' + fmtRate(rate()) + '/s';
+  $('#fl').textContent = S.floor; $('#shards').textContent = S.shards;
   document.querySelectorAll('[data-cost]').forEach(b => b.disabled = S.coins < +b.dataset.cost);
 }
 
@@ -132,14 +133,17 @@ function buyEgg(tier) {
 }
 function card(m, attrs = '', big = false) {
   const s = stats(m);
-  return `<div class="mon r${m.rar} ${big ? 'big' : ''}" ${attrs}><div class="ic">${m.icon}</div><b>${esc(m.name)}</b><span>${ELS[m.el].i} ${RARS[m.rar]} · Lv${m.lvl}</span><small>❤${s.hp} ⚔${s.atk} ⚡${s.spd}</small><small class="tr">${TRAITS[m.trait].n}</small></div>`;
+  return `<div class="mon r${m.rar} el-${m.el}${big ? ' big' : ''}" ${attrs}><div class="rib">${RARS[m.rar]}</div>
+    <div class="art"><span class="ic">${m.icon}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span></div>
+    <b class="nm">${esc(m.name)}</b><div class="st"><span>❤${fmt(s.hp)}</span><span>⚔${fmt(s.atk)}</span><span>⚡${s.spd}</span></div><div class="tr">${TRAITS[m.trait].n}</div></div>`;
 }
 function hatch(id) {
   const i = S.eggs.findIndex(e => e.id === id); if (i < 0) return;
   const m = makeMon(S.eggs.splice(i, 1)[0]); S.mons.push(m); S.hatched++; save();
   modal(`<div class="hatch"><div class="egg">🥚</div><p>Hatching…</p></div>`, true);
-  setTimeout(() => { modal(`<h3>It hatched!</h3>${card(m, '', true)}<p>${TRAITS[m.trait].d}</p><button data-act="close">Nice</button>`); render(); }, 900);
+  setTimeout(() => { modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
 }
+const reveal = m => `<div class="reveal r${m.rar}"><div class="rays"></div>${card(m, '', true)}</div>`;
 function hatchAll() {
   if (!S.eggs.length) return;
   const got = S.eggs.map(e => makeMon(e)); S.eggs = []; S.mons.push(...got); S.hatched += got.length; save(); render();
@@ -174,7 +178,7 @@ function fuse(aId, bId) {
   if (ok) { const k = RMUL[a.rar + 1] / RMUL[a.rar]; a.rar++; a.bh *= k; a.ba *= k; a.sp += 1; a.lvl = Math.max(a.lvl, b.lvl); }
   save(); render();
   modal(`<div class="hatch"><div class="egg">🌀</div><p>Fusing…</p></div>`, true);
-  setTimeout(() => modal(`<h3>${ok ? 'Fusion succeeded!' : 'Fusion failed'}</h3>${card(a, '', true)}<p>${ok ? `${esc(a.name)} is now ${RARS[a.rar]}.` : `${esc(b.name)} was lost.`}</p><button data-act="close">OK</button>`), 1000);
+  setTimeout(() => modal(`<h3>${ok ? 'Fusion succeeded!' : 'Fusion failed'}</h3>${ok ? reveal(a) : card(a, '', true)}<p>${ok ? `${esc(a.name)} is now ${RARS[a.rar]}.` : `${esc(b.name)} was lost.`}</p><button data-act="close">OK</button>`), 1000);
 }
 
 // ---------- ascend ----------
@@ -250,14 +254,15 @@ function apply(e, anim) {
     if (du) {
       du.classList.remove('hit'); void du.offsetWidth; du.classList.add('hit');
       const b = du.getBoundingClientRect(), p = document.createElement('div');
-      p.className = 'pop'; p.textContent = '-' + e.dmg; p.style.cssText = `left:${b.left + b.width / 2 - 10}px;top:${b.top}px;color:${e.m > 1 ? '#ffcf4a' : '#fff'}`;
+      p.className = 'pop' + (e.crit ? ' crit' : e.m > 1 ? ' super' : ''); p.textContent = (e.crit ? 'CRIT ' : '') + '-' + fmt(e.dmg);
+      p.style.cssText = `left:${b.left + b.width / 2 - 20}px;top:${b.top + 10}px`;
       document.body.appendChild(p); setTimeout(() => p.remove(), 700);
     }
   }
 }
 function paintUnit(i, h) {
   const u = $('#u' + i); if (!u) return;
-  u.classList.toggle('dead', h <= 0);
+  u.classList.toggle('dead', h <= 0); u.classList.toggle('low', h > 0 && h < B.U[i].maxhp * .3);
   u.querySelector('.bar i').style.width = Math.max(0, h / B.U[i].maxhp * 100) + '%';
   u.querySelector('.hp').textContent = Math.max(0, h) + '/' + B.U[i].maxhp;
 }
@@ -270,31 +275,37 @@ function skip() { if (!B || B.done) return; clearInterval(B.t); while (B.idx < B
 function finishBattle() { clearInterval(B.t); B.done = true; if (cur === 'tower') render(); }
 
 function arenaUnit(u, i) {
-  return `<div class="unit el-${u.el}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
+  return `<div class="unit ${u.side} el-${u.el}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
 }
 function vArena() {
-  const res = B.done ? `<div class="res ${B.win ? 'win' : 'lose'}"><h2>${B.win ? 'Victory! +🪙' + fmt(B.rw) : 'Defeated'}</h2><p>${B.win ? `Floor ${B.f} cleared.` : `Floor ${B.f} held. Level up or change your team.`}</p><button class="btn" data-act="cont">${B.win ? 'Next floor' : 'Retry'}</button></div>` : '';
-  return `<h2>Floor ${B.f}</h2><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
-  <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>
+  const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
+  const res = B.done ? `<div class="res ${B.win ? 'win' : 'lose'}">${B.win ? `<div class="stars">${'★'.repeat(alive)}${'☆'.repeat(3 - alive)}</div>` : ''}
+    <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}` : `Floor ${B.f} holds. Level up or change your team.`}</p>
+    <button data-act="cont">${B.win ? 'Next floor ▶' : 'Try again'}</button></div>` : '';
+  return `<div class="floorhead"><h2>Floor ${B.f}</h2></div>
+  <div class="arena"><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
+  <div class="vs">VS</div>
+  <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>${res}</div>
   <div class="log" id="log">${B.log.map(l => `<div>${l}</div>`).join('')}</div>
-  ${B.done ? res : `<div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button data-act="skip">Skip ⏩</button></div>`}`;
+  ${B.done ? '' : `<div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button data-act="skip">Skip ⏩</button></div>`}`;
 }
 
 // ---------- views ----------
 function vHome() {
   const eg = S.eggs.map(e => `<button class="egg-i ${e.tier}" data-act="hatch" data-id="${e.id}">🥚<span class="eb">${ELS[e.el].i}</span></button>`).join('');
-  return `<section class="card"><h3>⚙️ Generator Lv ${S.gen}</h3><p>+1 coin/s per level. Each monster owned: +2% income.</p>
-    <button data-act="gen" data-cost="${genCost()}">Upgrade · 🪙${fmt(genCost())}</button></section>
-  <section class="card"><h3>🥚 Egg shop</h3><div class="shop">
-    <div><div class="eggb">🥚</div><b>Basic</b><small>Fire / Grass / Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost}">🪙${EGG.basic.cost}</button></div>
-    <div class="prem"><div class="eggb">🪺</div><b>Premium</b><small>3% Dark/Light · better rarity</small><button data-act="buy" data-tier="premium" data-cost="${EGG.premium.cost}">🪙${fmt(EGG.premium.cost)}</button></div>
+  return `<section class="card"><h3>⛏️ Coin Mine · Lv ${S.gen}</h3>
+    <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +2% per monster owned</p></div>
+    <div class="ctl"><button data-act="gen" data-cost="${genCost()}">Upgrade · 🪙${fmt(genCost())}</button></div></section>
+  <section class="card"><h3>🥚 Hatchery</h3><div class="shop">
+    <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost}">🪙 ${EGG.basic.cost}</button></div>
+    <div class="prem"><div class="eggb">🪺</div><b>Premium Egg</b><small>Better rarity · 3% 🌑/✨</small><button data-act="buy" data-tier="premium" data-cost="${EGG.premium.cost}">🪙 ${fmt(EGG.premium.cost)}</button></div>
   </div></section>
-  <section class="card"><h3>Your eggs (${S.eggs.length})</h3><small>Element shown. Rarity & trait revealed on hatch.</small>
-    <div class="eggs">${eg || '<p>No eggs. Buy one above.</p>'}</div>
-    ${S.eggs.length > 1 ? '<button data-act="hatchall">Hatch all</button>' : ''}</section>`;
+  <section class="card"><h3>🪹 Nest (${S.eggs.length})</h3><p style="text-align:center">Tap an egg to hatch. Element shown, rarity is a surprise.</p>
+    <div class="eggs">${eg || '<p>Empty nest. Buy an egg above.</p>'}</div>
+    ${S.eggs.length > 1 ? '<div class="ctl"><button data-act="hatchall">Hatch all</button></div>' : ''}</section>`;
 }
 function vMons() {
-  if (!S.mons.length) return '<p>No monsters yet. Buy and hatch an egg on Home.</p>';
+  if (!S.mons.length) return '<section class="card"><h3>📖 Bestiary</h3><p style="text-align:center">No monsters yet. Buy and hatch an egg in the Village.</p></section>';
   const pw = m => { const s = stats(m); return s.hp * s.atk; };
   const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
   const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
@@ -307,12 +318,12 @@ let monEl = 'all', monSort = 'rar';
 function vTower() {
   if (B) return vArena();
   const E = enemies(S.floor), boss = S.floor % 10 === 0;
-  const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`) : `<div class="mon empty" data-act="slot" data-i="${i}">＋</div>`; }).join('');
-  return `<h2>Floor ${S.floor} ${boss ? '<span class="boss">BOSS</span>' : ''}</h2><small>Best: ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small>
-  <h3 style="margin-top:8px">Enemies</h3>
-  <div class="row">${E.map(u => `<div class="unit el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${u.hp} ⚔${u.atk}</small></div>`).join('')}</div>
-  <h3>Your team</h3><div class="row">${slots}</div>
-  <div class="ctl"><button data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ Fight</button><button class="btn alt" data-act="auto" style="background:#ffffff22;color:inherit">Auto-pick best</button></div>
+  const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`) : `<div class="mon empty" data-act="slot" data-i="${i}">＋<small>Add</small></div>`; }).join('');
+  return `<div class="floorhead"><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small></div>
+  <div class="arena"><div class="row">${E.map(u => `<div class="unit e el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small></div>`).join('')}</div>
+  <div class="vs">VS</div><div class="row">${slots}</div></div>
+  <button class="fightbtn" data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ FIGHT!</button>
+  <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick best team</button></div>
   <p class="legend">🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>
   <section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
     <p>Each 💎: +1% monster stats, +5% coins. Ascending resets coins, generator, floor and levels. Monsters, rarity and eggs stay.</p>
@@ -323,7 +334,7 @@ function vSet() {
     <textarea id="exp" readonly></textarea><div class="ctl"><button data-act="copy">Copy</button></div></section>
   <section class="card"><h3>Import</h3><textarea id="imp" placeholder="Paste save code (IMT1:…)"></textarea><div class="ctl"><button data-act="import">Import (replaces current)</button></div></section>
   <section class="card"><h3>About</h3><p>Offline earnings capped at 8h. Works offline once loaded. Hatched: ${S.hatched}.</p>
-    <div class="ctl"><button data-act="reset" style="background:var(--bad);color:#fff">Reset all progress</button></div></section>`;
+    <div class="ctl"><button class="danger" data-act="reset">Reset all progress</button></div></section>`;
 }
 const exportCode = () => { save(); return 'IMT1:' + btoa(unescape(encodeURIComponent(JSON.stringify(S)))); };
 
@@ -350,7 +361,7 @@ function detail(id) {
 function picker(i) {
   const l = S.mons.filter(m => !S.team.includes(m.id)).sort((a, b) => b.rar - a.rar || b.lvl - a.lvl);
   modal(`<h3>Slot ${i + 1}</h3>${l.length ? `<div class="grid">${l.map(m => card(m, `data-act="pick" data-id="${m.id}" data-i="${i}"`)).join('')}</div>` : '<p>No free monsters.</p>'}
-    ${S.team[i] ? `<button data-act="clear" data-i="${i}">Remove from slot</button>` : ''}<button class="btn alt" data-act="close" style="background:#ffffff22;color:inherit">Cancel</button>`);
+    ${S.team[i] ? `<button data-act="clear" data-i="${i}">Remove from slot</button>` : ''}<button class="btn alt" data-act="close">Cancel</button>`);
 }
 function autoPick() {
   const pw = m => { const s = stats(m); return s.hp * s.atk; };

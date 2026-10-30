@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
-<meta name="theme-color" content="#1b1535">
+<meta name="theme-color" content="#5c341d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <title>Idle Monster Tower</title>
@@ -14,16 +14,16 @@
 </head>
 <body>
 <header id="hud">
-  <div class="coins">🪙 <b id="coins">0</b></div>
-  <div class="rate"><span id="rate">0</span>/s</div>
-  <div class="fl">🗼 <b id="fl">1</b></div>
+  <div class="pill coin">🪙 <b id="coins">0</b><small id="rate">+0/s</small></div>
+  <div class="pill">💎 <b id="shards">0</b></div>
+  <div class="pill">🗼 <b id="fl">1</b></div>
 </header>
 <div id="upd" hidden>New version ready <button data-act="update">Reload</button></div>
 <main id="view"></main>
 <nav id="tabs">
-  <button data-act="tab" data-t="home">🏠<small>Home</small></button>
+  <button data-act="tab" data-t="home">🏰<small>Village</small></button>
   <button data-act="tab" data-t="mons">📖<small>Monsters</small></button>
-  <button data-act="tab" data-t="tower">🗼<small>Tower</small></button>
+  <button data-act="tab" data-t="tower">⚔️<small>Tower</small></button>
   <button data-act="tab" data-t="set">⚙️<small>Settings</small></button>
 </nav>
 <div id="modal" hidden></div>

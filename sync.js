@@ -120,10 +120,29 @@ SYNC_ACT.signout = () => {
 };
 SYNC_ACT.changemail = () => { setCodeFor(''); refreshPanel(); };
 
+// server keeps the last 5 cloud saves (hourly, plus whenever progress went backwards)
+let backupRows = [];
+SYNC_ACT.backups = async () => {
+  try {
+    backupRows = await sb('/rest/v1/save_backups?select=id,saved_at,save&order=saved_at.desc', { token: await token() });
+    const row = (r, i) => { let s; try { s = summary(sanitize(r.save)); } catch (e) { s = 'unreadable'; }
+      return `<div class="card"><b>${new Date(r.saved_at).toLocaleString()}</b><p>${s}</p><button data-act="restore" data-i="${i}">Restore</button></div>`; };
+    modal(`<h3>Cloud backups</h3>${backupRows.length ? backupRows.map(row).join('') : '<p>No backups yet. One is kept each hour you play while signed in.</p>'}
+      <button class="btn alt" data-act="close">Close</button>`);
+  } catch (e) { toast('Could not load backups: ' + e.message); }
+};
+SYNC_ACT.restore = d => {
+  const r = backupRows[+d.i]; if (!r || !confirm('Replace your current progress with this backup?')) return;
+  let s; try { s = sanitize(r.save); } catch (e) { return toast('Backup is unreadable'); }
+  s.cloud = S.cloud; s.changed = Date.now(); s.saved = Date.now();
+  S = s; B = null; last = Date.now(); save(); closeModal(); render(); toast('Backup restored');
+  sync();
+};
+
 function syncPanel() {
   let body;
   if (auth) body = `<p>Signed in as <b>${esc(auth.email || '?')}</b></p><p id="syncst">${esc(syncMsg)}</p>
-    <div class="ctl"><button data-act="syncnow">Sync now</button><button class="btn alt" data-act="signout">Sign out</button></div>`;
+    <div class="ctl"><button data-act="syncnow">Sync now</button><button class="btn alt" data-act="backups">Backups</button><button class="btn alt" data-act="signout">Sign out</button></div>`;
   else if (codeFor) body = `<p>Email sent to <b>${esc(codeFor)}</b>. Enter the 6-digit code, or open the link on this device.</p>
     <input id="sbcode" inputmode="numeric" autocomplete="one-time-code" placeholder="6-digit code">
     <div class="ctl"><button data-act="verify">Verify</button><button class="btn alt" data-act="changemail">Change email</button></div>`;
