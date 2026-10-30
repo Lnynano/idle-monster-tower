@@ -116,6 +116,31 @@ function bulk(costAt, from, cap = Infinity) {
   return { k, c };
 }
 const qtyChips = () => `<div class="chips qty">${[1, 10, 'max'].map(q => `<button class="${qty === q ? 'on' : ''}" data-act="qty" data-k="${q}">${q === 'max' ? 'Max' : '×' + q}</button>`).join('')}</div>`;
+// ---------- sound ----------
+// tiny WebAudio synth, no audio files; browsers only allow it after the first tap. Mute is per device.
+let ac = null, muted = false;
+try { muted = localStorage.getItem('imt_mute') === '1'; } catch (e) { }
+function tone(f, d = .1, type = 'square', v = .05, slide = 0, delay = 0) {
+  if (muted) return;
+  try {
+    ac = ac || new (window.AudioContext || window.webkitAudioContext)();
+    if (ac.state === 'suspended') ac.resume();
+    const t = ac.currentTime + delay, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.setValueAtTime(f, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, f + slide), t + d);
+    g.gain.setValueAtTime(v, t); g.gain.exponentialRampToValueAtTime(.0001, t + d);
+    o.connect(g).connect(ac.destination); o.start(t); o.stop(t + d + .02);
+  } catch (e) { }
+}
+const SFX = {
+  buy: () => { tone(880, .06, 'square', .035); tone(1320, .08, 'square', .035, 0, .05); },
+  coin: () => [988, 1319, 1568].forEach((f, i) => tone(f, .09, 'square', .035, 0, i * .06)),
+  hit: () => tone(200, .08, 'sawtooth', .04, -110),
+  big: () => { tone(320, .14, 'sawtooth', .06, -220); tone(1100, .07, 'square', .03, 0, .02); },
+  win: () => [523, 659, 784, 1047].forEach((f, i) => tone(f, .18, 'triangle', .08, 0, i * .1)),
+  lose: () => [392, 330, 262].forEach((f, i) => tone(f, .24, 'triangle', .07, 0, i * .15)),
+  hatch: r => [440, 554, 659, 880, 1109, 1319].slice(0, 2 + r).forEach((f, i) => tone(f, .2, 'triangle', .08, 0, i * .09)),
+};
 const vib = p => { try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(p); } catch (e) { } };
 // a win pays ~45s of mine income on top of the floor's base; boss floors triple it
 const reward = f => Math.floor((15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin() + rate() * 45) * (f % 10 === 0 ? 3 : 1));
@@ -129,10 +154,18 @@ function tick() {
   dt = Math.min(dt, OFFLINE_CAP);
   const gain = rate() * dt / 1000; S.coins += gain;
   if (dt > 300000) {
+    // auto-climb keeps going while away: one floor per minute, up to 25, until a loss
+    let climbed = '';
+    if (climb && teamMons().length && !B) {
+      const f0 = S.floor; let coins = 0, eggs = 0;
+      for (let n = Math.min(25, Math.floor(dt / 60000)); n > 0; n--) { const r = resolveFight(); if (!r.win) break; coins += r.rw; if (r.chest) eggs++; }
+      if (S.floor > f0) climbed = `<p style="text-align:center">🔁 Auto-climb cleared floor${S.floor - f0 > 1 ? `s ${f0}–${S.floor - 1}` : ' ' + f0}<br>+🪙${fmt(coins)}${eggs ? ` · +${eggs} 🪺` : ''}</p>`;
+      else climbed = `<p style="text-align:center">🔁 Auto-climb couldn't beat floor ${f0} yet.</p>`;
+    }
     const h = Math.floor(dt / 3600e3), mi = Math.round(dt % 3600e3 / 60000);
     modal(`<h3>Welcome back!</h3><div class="reveal"><div class="eggb">⛏️</div></div>
       <p style="text-align:center">Away ${h ? h + 'h ' : ''}${mi}m${dt >= OFFLINE_CAP ? ' (8h max)' : ''}. Your mine earned:</p>
-      <div class="big-num" style="text-align:center">+🪙${fmt(gain)}</div><button data-act="close">Collect</button>`);
+      <div class="big-num" style="text-align:center">+🪙${fmt(gain)}</div>${climbed}<button data-act="close">Collect</button>`);
   } else if (dt > 60000) toast(`Welcome back! +🪙${fmt(gain)}`);
   hud();
 }
@@ -192,7 +225,7 @@ function hatch(id) {
   const i = S.eggs.findIndex(e => e.id === id); if (i < 0) return;
   const m = makeMon(S.eggs.splice(i, 1)[0]), isNew = addMon(m); save();
   modal(`<div class="hatch"><div class="egg">🥚</div><p>Hatching…</p></div>`, true);
-  setTimeout(() => { vib(m.rar >= 2 ? [40, 60, 40, 60, 80] : 30); modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${isNew ? '<b>New species! +💎1</b><br>' : ''}${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
+  setTimeout(() => { vib(m.rar >= 2 ? [40, 60, 40, 60, 80] : 30); SFX.hatch(m.rar); modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${isNew ? '<b>New species! +💎1</b><br>' : ''}${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
 }
 const reveal = m => `<div class="reveal r${m.rar}"><div class="rays"></div>${card(m, '', true)}</div>`;
 function hatchAll() {
@@ -201,7 +234,7 @@ function hatchAll() {
   const nNew = got.filter(addMon).length; save(); render();
   // only Rare+ get cards; the best one gets the full reveal
   const good = got.filter(m => m.rar >= 1).sort((a, b) => b.rar - a.rar), best = good[0], cnt = [0, 1, 2, 3].map(r => got.filter(m => m.rar === r).length);
-  vib(best && best.rar >= 2 ? [40, 60, 40, 60, 80] : 30);
+  vib(best && best.rar >= 2 ? [40, 60, 40, 60, 80] : 30); SFX.hatch(best ? best.rar : 0);
   modal(`<h3>Hatched ${got.length}</h3><p style="text-align:center">${cnt.map((c, r) => c ? `${c} ${RARS[r]}` : '').filter(Boolean).join(' · ')}${nNew ? `<br><b>${nNew} new species! +💎${nNew}</b>` : ''}</p>
     ${best ? reveal(best) : ''}${good.length > 1 ? `<div class="grid">${good.slice(1).map(m => card(m)).join('')}</div>` : ''}<button data-act="close">Nice!</button>`);
 }
@@ -353,13 +386,26 @@ function ascend() {
 }
 
 // ---------- battle ----------
+// every 10 floors is a biome; half its enemies share the biome's element
+const BIOMES = [
+  { n: 'Mossy Halls', el: 'grass', c: '#3f5a3c' }, { n: 'Ember Depths', el: 'fire', c: '#5e2f24' }, { n: 'Tidal Vault', el: 'water', c: '#24476a' },
+  { n: 'Shadow Spire', el: 'dark', c: '#33264f' }, { n: 'Radiant Peak', el: 'light', c: '#5f5530' },
+];
+const biome = f => BIOMES[Math.floor((f - 1) / 10) % BIOMES.length];
+// element that hits this one for the most damage
+const weakTo = el => Object.keys(ELS).reduce((b, a) => mult(a, el) > mult(b, el) ? a : b, 'fire');
 function enemies(f) {
-  const r = mulberry(f * 7919 + 13), boss = f % 10 === 0, k = (boss ? 1.3 : 1) * Math.min(1, .4 + f * .07), dl = Math.min(.5, Math.max(0, (f - 15) * .03));
-  return [0, 1, 2].map(() => {
-    const el = r() < dl ? (r() < .5 ? 'dark' : 'light') : pick(r, BASIC);
-    const pen = el === 'dark' || el === 'light' ? 0.8 : 1;
-    const hp = Math.round(50 * Math.pow(1.125, f) * k * pen * (.9 + r() * .2)), atk = Math.round(7 * Math.pow(1.085, f) * k * pen * (.9 + r() * .2));
-    return { side: 'e', name: genName(r, el), icon: pick(r, ICONS[el]), el, hp, maxhp: hp, atk, spd: Math.round(8 + r() * 8 + f * .2), trait: null };
+  const r = mulberry(f * 7919 + 13), boss = f % 10 === 0, k = Math.min(1, .4 + f * .07), dl = Math.min(.5, Math.max(0, (f - 15) * .03));
+  const bm = biome(f), tr = Math.min(.6, Math.max(0, (f - 10) * .03));
+  return [0, 1, 2].map(i => {
+    let el = r() < dl ? (r() < .5 ? 'dark' : 'light') : pick(r, BASIC);
+    if (r() < .5 && (BASIC.includes(bm.el) || f > 15)) el = bm.el;
+    // boss floors: the middle enemy is a big crowned boss with a trait
+    const isBoss = boss && i === 1, pen = el === 'dark' || el === 'light' ? 0.8 : 1;
+    const bh = isBoss ? 2.4 : 1, ba = isBoss ? 1.5 : 1;
+    const hp = Math.round(50 * Math.pow(1.125, f) * k * bh * pen * (.9 + r() * .2)), atk = Math.round(7 * Math.pow(1.085, f) * k * ba * pen * (.9 + r() * .2));
+    const trait = isBoss || r() < tr ? pick(r, TRAIT_KEYS.filter(t => t !== 'gold')) : null;
+    return { side: 'e', name: (isBoss ? 'King ' : '') + genName(r, el), icon: pick(r, ICONS[el]), el, hp, maxhp: hp, atk, spd: Math.round(8 + r() * 8 + f * .2 + (isBoss ? 4 : 0)), trait, boss: isBoss };
   });
 }
 function simulate(U) {
@@ -396,14 +442,19 @@ function winChance() {
   }
   return oddsVal;
 }
-function fight() {
-  const tm = teamMons(); if (!tm.length || B) return;
-  const U = [...enemies(S.floor), ...teamUnits(tm)], init = U.map(u => u.hp), f = S.floor;
+// fight the current floor and apply its rewards; returns the result (used live and for offline auto-climb)
+function resolveFight() {
+  const U = [...enemies(S.floor), ...teamUnits(teamMons())], init = U.map(u => u.hp), f = S.floor;
   const res = simulate(U), rw = res.win ? reward(f) : 0, chest = res.win && f % 10 === 0;
   if (res.win) { S.coins += rw; S.floor++; S.best = Math.max(S.best, S.floor); }
   if (chest) S.eggs.push({ id: S.nextId++, el: pick(Math.random, BASIC), tier: 'premium' });
-  S.changed = Date.now(); save();
-  B = { U, init, ev: res.ev, idx: 0, win: res.win, rw, f, chest, cur: init, log: [], done: false, t: 0 };
+  S.changed = Date.now();
+  return { U, init, ev: res.ev, win: res.win, rw, f, chest };
+}
+function fight() {
+  if (!teamMons().length || B) return;
+  const r = resolveFight(); save();
+  B = { ...r, idx: 0, cur: r.init, log: [], done: false, t: 0 };
   render(); B.t = setInterval(step, 450 / speed);
 }
 // battle playback speed, per device
@@ -425,12 +476,17 @@ function apply(e, anim) {
   e.hp.forEach((h, i) => paintUnit(i, h));
   const lg = $('#log'); if (lg) { lg.insertAdjacentHTML('beforeend', `<div>${B.log[B.log.length - 1]}</div>`); lg.scrollTop = 1e9; }
   if (anim) {
+    (e.crit || e.m > 1 ? SFX.big : SFX.hit)();
     const du = $('#u' + e.d), au = $('#u' + e.a);
     if (au) { au.classList.add('atk'); setTimeout(() => au.classList.remove('atk'), 200); }
     if (du) {
       du.classList.remove('hit'); void du.offsetWidth; du.classList.add('hit');
       const b = du.getBoundingClientRect(), p = document.createElement('div');
-      p.className = 'pop' + (e.crit ? ' crit' : e.m > 1 ? ' super' : ''); p.textContent = (e.crit ? 'CRIT ' : '') + '-' + fmt(e.dmg);
+      p.className = 'pop' + (e.crit ? ' crit' : e.m > 1 ? ' super' : ''); p.textContent = (e.crit ? 'CRIT ' : e.m > 1 ? 'SUPER ' : '') + '-' + fmt(e.dmg);
+      // element burst on the target
+      const fx = document.createElement('div'); fx.className = 'burst'; fx.textContent = ELS[B.U[e.a].el].i;
+      fx.style.cssText = `left:${b.left + b.width / 2 - 18}px;top:${b.top + b.height / 2 - 24}px`;
+      document.body.appendChild(fx); setTimeout(() => fx.remove(), 450);
       p.style.cssText = `left:${b.left + b.width / 2 - 20}px;top:${b.top + 10}px`;
       document.body.appendChild(p); setTimeout(() => p.remove(), 700);
     }
@@ -450,7 +506,7 @@ function step() {
 function skip() { if (!B || B.done) return; clearInterval(B.t); while (B.idx < B.ev.length) apply(B.ev[B.idx++], false); finishBattle(); }
 function finishBattle() {
   clearInterval(B.t); B.done = true; if (cur === 'tower') render();
-  if (B.win) vib(30);
+  if (B.win) { vib(30); SFX.win(); } else SFX.lose();
   if (!climb) return;
   if (!B.win) { toast(`Auto-climb stopped at floor ${B.f}`); return; }
   const b = B;
@@ -467,7 +523,7 @@ function toggleClimb() {
 }
 
 function arenaUnit(u, i) {
-  return `<div class="unit ${u.side} el-${u.el}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
+  return `<div class="unit ${u.side} el-${u.el}${u.boss ? ' king' : ''}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
 }
 function vArena() {
   const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
@@ -475,7 +531,7 @@ function vArena() {
     <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}${B.chest ? '<br>🎁 Boss chest: Premium egg!' : ''}` : `Floor ${B.f} holds. Level up, feed, or try a team with ▲ arrows.`}</p>
     <button data-act="cont">${B.win ? 'Next floor ▶' : 'Try again'}</button></div>` : '';
   return `<div class="floorhead"><h2>Floor ${B.f}</h2></div>
-  <div class="arena"><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
+  <div class="arena" style="--arena:${biome(B.f).c}"><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
   <div class="vs">VS</div>
   <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>${res}</div>
   <div class="log" id="log">${B.log.map(l => `<div>${l}</div>`).join('')}</div>
@@ -516,9 +572,9 @@ function vTower() {
   const adv = m => { const v = E.reduce((t, u) => t + mult(m.el, u.el), 0) / E.length; return v > 1.05 ? '<span class="adv up">▲</span>' : v < .95 ? '<span class="adv down">▼</span>' : ''; };
   const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`, false, adv(m)) : `<div class="mon empty" data-act="slot" data-i="${i}">＋<small>Add</small></div>`; }).join('');
   const odds = Math.round(winChance() * 100), sw = S.sweepAt - Date.now();
-  return `${goalCard()}<div class="floorhead"><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS · 🎁 chest</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small>
+  return `${goalCard()}<div class="floorhead"><small class="biome">${biome(S.floor).n}</small><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS · 🎁 chest</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small>
     ${S.team.length ? `<div class="odds ${odds >= 70 ? 'good' : odds >= 35 ? 'mid' : 'bad'}">Win chance ~${odds}%</div>` : ''}</div>
-  <div class="arena"><div class="row">${E.map(u => `<div class="unit e el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small></div>`).join('')}</div>
+  <div class="arena" style="--arena:${biome(S.floor).c}"><div class="row">${E.map(u => `<div class="unit e el-${u.el}${u.boss ? ' king' : ''}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${u.boss ? 'BOSS' : ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small>${u.trait ? `<small class="etr">${TRAITS[u.trait].n}</small>` : ''}<small class="weak">Weak: ${ELS[weakTo(u.el)].i}</small></div>`).join('')}</div>
   <div class="vs">VS</div><div class="row">${slots}</div></div>
   <button class="fightbtn" data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ FIGHT!</button>
   <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick team</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button></div>
@@ -532,6 +588,7 @@ function vSet() {
   return `${syncPanel()}<section class="card"><h3>Save code</h3><p>Copy to back up or move to another device.</p>
     <textarea id="exp" readonly></textarea><div class="ctl"><button data-act="copy">Copy</button></div></section>
   <section class="card"><h3>Import</h3><textarea id="imp" placeholder="Paste save code (IMT1:…)"></textarea><div class="ctl"><button data-act="import">Import (replaces current)</button></div></section>
+  <section class="card"><h3>🔊 Sound</h3><div class="ctl"><button class="btn alt${muted ? '' : ' on'}" data-act="mute">${muted ? '🔇 Sound off' : '🔊 Sound on'}</button></div></section>
   <section class="card"><h3>About</h3><p>Offline earnings capped at 8h. Works offline once loaded. Hatched: ${S.hatched}.</p>
     <div class="ctl"><button class="danger" data-act="reset">Reset all progress</button></div></section>`;
 }
@@ -578,6 +635,7 @@ const ACT = {
   gen: () => { const g = bulk(genCostAt, S.gen); if (S.coins < g.c) return; S.coins -= g.c; S.gen += g.k; save(); render(); },
   qty: d => { qty = d.k === 'max' ? 'max' : +d.k; try { localStorage.setItem('imt_qty', qty); } catch (e) { } const m = $('#modal'); if (!m.hidden && m.dataset.mon) detail(+m.dataset.mon); render(); },
   climb: toggleClimb,
+  mute: () => { muted = !muted; try { localStorage.setItem('imt_mute', muted ? '1' : ''); } catch (e) { } if (!muted) SFX.coin(); render(); },
   lock: d => { const m = monById(+d.id); if (!m) return; m.lock = !m.lock; save(); detail(m.id); render(); },
   hatch: d => hatch(+d.id),
   hatchall: hatchAll,
@@ -627,6 +685,8 @@ document.addEventListener('click', e => {
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   const a = b.dataset.act, f = ACT[a]; if (!f) return;
   f(b.dataset);
+  if (a === 'buy' || a === 'gen' || a === 'lvl' || a === 'feed' || a === 'feedall') SFX.buy();
+  else if (a === 'goal' || a === 'ach' || a === 'daily' || a === 'sweep') SFX.coin();
   if (MUTATE.has(a)) { S.changed = Date.now(); save(); }
 });
 
