@@ -186,6 +186,47 @@ function canFuseAny() {
   return false;
 }
 
+// ---------- creature art ----------
+// procedural SVG monsters: species (element + icon slot) picks the body plan, the individual seed varies details
+const PAL = {
+  fire: ['#ff7a3d', '#ffc89a', '#a8321a'], grass: ['#5ccf6a', '#d2f5b4', '#2c7a3a'], water: ['#4aa8ff', '#cdeaff', '#24589a'],
+  dark: ['#8a6cff', '#d6caff', '#3b2a80'], light: ['#ffd84a', '#fff6cf', '#a8801a'],
+};
+function hashStr(t) { let h = 2166136261; for (const c of String(t)) h = Math.imul(h ^ c.codePointAt(0), 16777619); return h >>> 0; }
+function art(el, icon, seed, rar = 0) {
+  const r = mulberry(seed), [c, lt, dk] = PAL[el], sp = Math.max(0, ICONS[el].indexOf(icon));
+  // body plans: round, tall, wide, pear
+  const P = [[50, 60, 30, 28], [50, 58, 24, 33], [50, 64, 35, 24], [50, 61, 27, 30]][sp];
+  const cx = P[0], cy = P[1], rx = P[2] * (.92 + r() * .16), ry = P[3] * (.92 + r() * .16);
+  const top = cy - ry, eyeY = cy - ry * .28, eyeR = 4 + r() * 3, gap = rx * (.34 + r() * .14), cyc = r() < .12, f = n => n.toFixed(1);
+  let o = '';
+  // element crest behind the body
+  if (el === 'fire') o += `<path d="M${f(cx - 12)} ${f(top + 6)}Q${f(cx - 9)} ${f(top - 16)} ${cx} ${f(top - 22)}Q${f(cx - 2)} ${f(top - 8)} ${f(cx + 6)} ${f(top - 15)}Q${f(cx + 13)} ${f(top - 4)} ${f(cx + 12)} ${f(top + 6)}Z" fill="${c}" stroke="${dk}" stroke-width="2"/><path d="M${f(cx - 6)} ${f(top + 6)}Q${f(cx - 3)} ${f(top - 7)} ${f(cx + 1)} ${f(top - 11)}Q${f(cx + 4)} ${f(top - 2)} ${f(cx + 7)} ${f(top + 6)}Z" fill="#ffe08a"/>`;
+  if (el === 'grass') o += `<path d="M${cx} ${f(top + 4)}C${f(cx - 4)} ${f(top - 14)} ${f(cx - 20)} ${f(top - 16)} ${f(cx - 24)} ${f(top - 6)}C${f(cx - 14)} ${f(top - 2)} ${f(cx - 6)} ${top} ${cx} ${f(top + 4)}Z" fill="${dk}"/><path d="M${cx} ${f(top + 4)}C${f(cx + 4)} ${f(top - 16)} ${f(cx + 18)} ${f(top - 20)} ${f(cx + 22)} ${f(top - 10)}C${f(cx + 14)} ${f(top - 4)} ${f(cx + 6)} ${top} ${cx} ${f(top + 4)}Z" fill="${c}" stroke="${dk}" stroke-width="2"/>`;
+  if (el === 'water') o += `<path d="M${f(cx - 8)} ${f(top + 5)}Q${cx} ${f(top - 20)} ${f(cx + 15)} ${f(top - 12)}Q${f(cx + 6)} ${f(top - 2)} ${f(cx + 8)} ${f(top + 6)}Z" fill="${dk}"/><path d="M${f(cx - rx + 3)} ${cy}Q${f(cx - rx - 14)} ${cy - 6} ${f(cx - rx - 9)} ${cy + 10}Z" fill="${dk}"/><path d="M${f(cx + rx - 3)} ${cy}Q${f(cx + rx + 14)} ${cy - 6} ${f(cx + rx + 9)} ${cy + 10}Z" fill="${dk}"/>`;
+  if (el === 'dark') o += `<path d="M${f(cx - rx * .6)} ${f(top + 8)}L${f(cx - rx * .95)} ${f(top - 14)}L${f(cx - rx * .2)} ${f(top + 3)}Z" fill="${dk}"/><path d="M${f(cx + rx * .6)} ${f(top + 8)}L${f(cx + rx * .95)} ${f(top - 14)}L${f(cx + rx * .2)} ${f(top + 3)}Z" fill="${dk}"/><path d="M${f(cx - rx + 2)} ${cy - 4}Q${f(cx - rx - 20)} ${cy - 20} ${f(cx - rx - 16)} ${cy + 8}Q${f(cx - rx - 7)} ${cy} ${f(cx - rx + 2)} ${cy + 6}Z" fill="${dk}" opacity=".9"/><path d="M${f(cx + rx - 2)} ${cy - 4}Q${f(cx + rx + 20)} ${cy - 20} ${f(cx + rx + 16)} ${cy + 8}Q${f(cx + rx + 7)} ${cy} ${f(cx + rx - 2)} ${cy + 6}Z" fill="${dk}" opacity=".9"/>`;
+  if (el === 'light') o += `<ellipse cx="${cx}" cy="${f(top - 8)}" rx="13" ry="4" fill="none" stroke="#ffe46b" stroke-width="3"/><path d="M${f(cx - rx + 2)} ${cy - 6}Q${f(cx - rx - 20)} ${cy - 24} ${f(cx - rx - 15)} ${cy + 5}Z" fill="#fff" stroke="${dk}" stroke-width="1.5"/><path d="M${f(cx + rx - 2)} ${cy - 6}Q${f(cx + rx + 20)} ${cy - 24} ${f(cx + rx + 15)} ${cy + 5}Z" fill="#fff" stroke="${dk}" stroke-width="1.5"/>`;
+  // feet, body, belly
+  o += `<ellipse cx="${f(cx - rx * .45)}" cy="${f(cy + ry - 2)}" rx="7" ry="5" fill="${dk}"/><ellipse cx="${f(cx + rx * .45)}" cy="${f(cy + ry - 2)}" rx="7" ry="5" fill="${dk}"/>`;
+  o += `<ellipse cx="${cx}" cy="${cy}" rx="${f(rx)}" ry="${f(ry)}" fill="${c}" stroke="${dk}" stroke-width="2.5"/><ellipse cx="${cx}" cy="${f(cy + ry * .35)}" rx="${f(rx * .6)}" ry="${f(ry * .45)}" fill="${lt}" opacity=".9"/>`;
+  o += `<ellipse cx="${f(cx - rx * .45)}" cy="${f(cy - ry * .55)}" rx="${f(rx * .2)}" ry="${f(ry * .1)}" fill="#fff" opacity=".45"/>`;
+  // rarity marks: spots (Rare+), stripes (Epic+), forehead gem (Legendary)
+  if (rar >= 1) for (let i = 0; i < 3; i++) o += `<circle cx="${f(cx - rx * .65 + r() * rx * 1.3)}" cy="${f(cy + r() * ry * .3)}" r="${f(2 + r() * 2)}" fill="${dk}" opacity=".35"/>`;
+  if (rar >= 2) o += `<path d="M${f(cx - rx * .85)} ${cy + 6}q${f(rx * .2)} -7 ${f(rx * .4)} 0M${f(cx + rx * .45)} ${cy + 6}q${f(rx * .2)} -7 ${f(rx * .4)} 0" stroke="${dk}" stroke-width="2.5" fill="none" opacity=".55"/>`;
+  if (rar >= 3) o += `<path d="M${cx} ${f(top + 3)}l5 6-5 6-5-6Z" fill="#ff5f8a" stroke="#fff" stroke-width="1.2"/>`;
+  // face
+  const eye = x => `<g class="eye"><ellipse cx="${f(x)}" cy="${f(eyeY)}" rx="${f(eyeR)}" ry="${f(eyeR * 1.15)}" fill="#fff" stroke="${dk}" stroke-width="1.5"/><circle cx="${f(x + 1)}" cy="${f(eyeY + 1)}" r="${f(eyeR * .55)}" fill="#1b1030"/><circle cx="${f(x + 2)}" cy="${f(eyeY - 1)}" r="${f(eyeR * .2)}" fill="#fff"/></g>`;
+  o += cyc ? eye(cx) : eye(cx - gap) + eye(cx + gap);
+  const my = eyeY + eyeR + 6, mo = r();
+  o += mo < .4 ? `<path d="M${cx - 6} ${f(my)}q6 6 12 0" stroke="#1b1030" stroke-width="2.2" fill="none" stroke-linecap="round"/>`
+    : mo < .75 ? `<path d="M${cx - 6} ${f(my)}q6 7 12 0Z" fill="#1b1030"/><path d="M${cx - 4} ${f(my)}l2 3 2-3Z" fill="#fff"/>`
+      : `<ellipse cx="${cx}" cy="${f(my + 2)}" rx="4" ry="3" fill="#1b1030"/>`;
+  if (r() < .5) o += `<circle cx="${f(cx - gap - 5)}" cy="${f(my)}" r="3" fill="#ff7a9a" opacity=".55"/><circle cx="${f(cx + gap + 5)}" cy="${f(my)}" r="3" fill="#ff7a9a" opacity=".55"/>`;
+  return `<svg class="beast" viewBox="0 0 100 100" aria-hidden="true">${o}</svg>`;
+}
+const monArt = m => art(m.el, m.icon, hashStr(m.id + m.name), m.rar);
+const unitArt = u => art(u.el, u.icon, u.seed, u.rar);
+
 // ---------- monsters / eggs ----------
 // new monsters arrive at 80% of the team's average level so fresh pulls are usable right away
 function hatchLvl() { const t = teamMons(); return t.length ? Math.max(1, Math.floor(t.reduce((a, m) => a + m.lvl, 0) / t.length * .8)) : 1; }
@@ -218,7 +259,7 @@ function buyEgg(tier) {
 function card(m, attrs = '', big = false, extra = '') {
   const s = stats(m);
   return `<div class="mon r${m.rar} el-${m.el}${big ? ' big' : ''}" ${attrs}><div class="rib">${RARS[m.rar]}</div>
-    <div class="art"><span class="ic">${m.icon}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${extra}</div>
+    <div class="art"><span class="ic">${monArt(m)}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${extra}</div>
     <b class="nm">${esc(m.name)}</b><div class="st"><span>❤${fmt(s.hp)}</span><span>⚔${fmt(s.atk)}</span><span>⚡${s.spd}</span></div><div class="tr">${TRAITS[m.trait].n}</div></div>`;
 }
 function hatch(id) {
@@ -405,7 +446,7 @@ function enemies(f) {
     const bh = isBoss ? 2.4 : 1, ba = isBoss ? 1.5 : 1;
     const hp = Math.round(50 * Math.pow(1.125, f) * k * bh * pen * (.9 + r() * .2)), atk = Math.round(7 * Math.pow(1.085, f) * k * ba * pen * (.9 + r() * .2));
     const trait = isBoss || r() < tr ? pick(r, TRAIT_KEYS.filter(t => t !== 'gold')) : null;
-    return { side: 'e', name: (isBoss ? 'King ' : '') + genName(r, el), icon: pick(r, ICONS[el]), el, hp, maxhp: hp, atk, spd: Math.round(8 + r() * 8 + f * .2 + (isBoss ? 4 : 0)), trait, boss: isBoss };
+    return { side: 'e', name: (isBoss ? 'King ' : '') + genName(r, el), icon: pick(r, ICONS[el]), el, hp, maxhp: hp, atk, spd: Math.round(8 + r() * 8 + f * .2 + (isBoss ? 4 : 0)), trait, boss: isBoss, rar: isBoss ? 3 : Math.min(2, Math.floor(f / 15)), seed: hashStr(f + ':' + i) };
   });
 }
 function simulate(U) {
@@ -429,7 +470,7 @@ function simulate(U) {
   }
   return { win: false, ev };
 }
-const teamUnits = tm => tm.map(m => { const s = stats(m); return { side: 'p', name: m.name, icon: m.icon, el: m.el, hp: s.hp, maxhp: s.hp, atk: s.atk, spd: s.spd, trait: m.trait }; });
+const teamUnits = tm => tm.map(m => { const s = stats(m); return { side: 'p', name: m.name, icon: m.icon, el: m.el, hp: s.hp, maxhp: s.hp, atk: s.atk, spd: s.spd, trait: m.trait, rar: m.rar, seed: hashStr(m.id + m.name) }; });
 // estimated win chance from quick simulations, cached per team/floor state
 let oddsKey = '', oddsVal = 0;
 function winChance() {
@@ -523,7 +564,7 @@ function toggleClimb() {
 }
 
 function arenaUnit(u, i) {
-  return `<div class="unit ${u.side} el-${u.el}${u.boss ? ' king' : ''}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
+  return `<div class="unit ${u.side} el-${u.el}${u.boss ? ' king' : ''}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${unitArt(u)}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
 }
 function vArena() {
   const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
@@ -558,7 +599,7 @@ function vMons() {
   const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
   const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
   const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
-  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${k.split(':')[1]}</span>` : '<span class="unseen">❔</span>').join('')}</div>
+  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
     <p style="text-align:center">Each new species: +💎1</p></section>`;
   return `${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
   <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
@@ -574,7 +615,7 @@ function vTower() {
   const odds = Math.round(winChance() * 100), sw = S.sweepAt - Date.now();
   return `${goalCard()}<div class="floorhead"><small class="biome">${biome(S.floor).n}</small><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS · 🎁 chest</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small>
     ${S.team.length ? `<div class="odds ${odds >= 70 ? 'good' : odds >= 35 ? 'mid' : 'bad'}">Win chance ~${odds}%</div>` : ''}</div>
-  <div class="arena" style="--arena:${biome(S.floor).c}"><div class="row">${E.map(u => `<div class="unit e el-${u.el}${u.boss ? ' king' : ''}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${u.boss ? 'BOSS' : ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small>${u.trait ? `<small class="etr">${TRAITS[u.trait].n}</small>` : ''}<small class="weak">Weak: ${ELS[weakTo(u.el)].i}</small></div>`).join('')}</div>
+  <div class="arena" style="--arena:${biome(S.floor).c}"><div class="row">${E.map(u => `<div class="unit e el-${u.el}${u.boss ? ' king' : ''}"><div class="ic">${unitArt(u)}</div><div class="nm">${ELS[u.el].i} ${u.boss ? 'BOSS' : ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small>${u.trait ? `<small class="etr">${TRAITS[u.trait].n}</small>` : ''}<small class="weak">Weak: ${ELS[weakTo(u.el)].i}</small></div>`).join('')}</div>
   <div class="vs">VS</div><div class="row">${slots}</div></div>
   <button class="fightbtn" data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ FIGHT!</button>
   <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick team</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button></div>

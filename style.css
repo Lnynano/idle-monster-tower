@@ -217,3 +217,16 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .unit .weak{font-size:10.5px;color:var(--ink2)}
 .burst{position:fixed;pointer-events:none;z-index:29;font-size:36px;animation:burst .45s ease-out forwards}
 @keyframes burst{0%{transform:scale(.3);opacity:1}60%{transform:scale(1.4);opacity:.9}100%{transform:scale(1.8);opacity:0}}
+/* ---------- creature art ---------- */
+.beast{width:58px;height:58px;overflow:visible;display:block;margin:0 auto;filter:drop-shadow(0 3px 2px #0005)}
+.mon .ic,.unit .ic{font-size:0;line-height:0;filter:none}
+.mon.big .beast{width:120px;height:120px}
+.unit .beast{width:52px;height:52px}
+.unit.king .beast{width:66px;height:66px}
+.bestiary .beast{width:36px;height:36px}
+.unit .beast,.mon.big .beast,.reveal .beast{transform-origin:50% 90%;animation:breathe 2.6s ease-in-out infinite}
+.unit:nth-child(2) .beast{animation-delay:-.9s}.unit:nth-child(3) .beast{animation-delay:-1.7s}
+.unit .eye,.mon.big .eye{transform-box:fill-box;transform-origin:center;animation:blink 4.5s infinite}
+.unit.dead .beast,.unit.dead .eye{animation:none}
+@keyframes breathe{50%{transform:translateY(-2px) scale(1.02,.98)}}
+@keyframes blink{0%,93%,100%{transform:scaleY(1)}95%{transform:scaleY(.1)}}

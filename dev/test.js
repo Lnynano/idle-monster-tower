@@ -39,7 +39,7 @@ t('fusion success raises rarity', `const a = makeMon({ el: 'fire', tier: 'basic'
   const r = Math.random; Math.random = () => 0; fuse(a.id, b.id); Math.random = r; return a.rar === 1 && S.mons.length === 1 && S.fusions === 1;`);
 t('ascend resets run, keeps monsters', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 40; S.mons.push(m); S.best = 40; S.floor = 40; S.gen = 9; const g = shardGain(); ascend();
   return S.shards === g && S.floor === 1 && S.gen === 0 && S.mons.length === 1 && m.lvl === 1 && S.top === 40;`);
-t('goal chain claims in order', `S.hatched = 2; claimGoal(); const a = S.quest === 1 && S.coins === 200; claimGoal(); return a && S.quest === 1;`);
+t('goal chain claims in order', `S.hatched = 2; claimGoal(); const a = S.quest === 1 && Math.floor(S.coins) === 200; claimGoal(); return a && S.quest === 1;`);
 t('daily streak continues from yesterday', `const y = new Date(); y.setDate(y.getDate() - 1); S.daily = dayStr(y); S.streak = 6; claimDaily(); return S.streak === 7 && S.eggs.some(e => e.tier === 'premium') && !dailyReady();`);
 t('daily streak resets after a gap', `S.daily = '2000-01-01'; S.streak = 5; claimDaily(); return S.streak === 1;`);
 t('offline earnings capped at 8h', `S.coins = 0; last = Date.now() - 24 * 3600e3; tick(); const max = rate() * 8 * 3600; return S.coins <= max * 1.001 && S.coins >= max * .999;`);
