@@ -57,5 +57,16 @@ t('skills: inferno hits all, bloom heals', `const mk = (el, side) => ({ side, na
   st.U[3].hp = 50; st.U[3].en = 100; const g = castSkill(st, st.U[3]);
   return e.hits.length === 2 && st.U[0].hp < 100 && st.U[1].hp < 100 && st.U[2].en === 0 && st.U[3].hp === 75 && g.heals.length === 2;`);
 t('uncharged skill does nothing', `const st = newBattle([{ side: 'e', el: 'fire', hp: 9, maxhp: 9, atk: 1, spd: 1 }, { side: 'p', el: 'water', hp: 9, maxhp: 9, atk: 1, spd: 1 }]); return castSkill(st, st.U[1]) === null;`);
+t('expedition: send, busy, claim after time', `for (let i = 0; i < 4; i++) addMon(makeMon({ el: 'fire', tier: 'basic' })); const free = S.mons.filter(m => !S.team.includes(m.id));
+  expPick = { k: 'm', ids: free.map(m => m.id) }; expSend(); const x = S.exp[0];
+  const early = (expClaim(0), S.exp.length === 1); x.start -= 3600e3 + 1; const c = S.coins; expClaim(0);
+  return free.length === 1 && busy(free[0].id) === false && early && S.exp.length === 0 && S.coins > c && S.eggs.length === 1;`);
+t('busy monsters skipped by team and feed', `for (let i = 0; i < 5; i++) addMon(makeMon({ el: 'fire', tier: 'basic' })); S.team = []; const m = S.mons[0];
+  S.exp.push({ k: 's', start: Date.now(), coins: 1, egg: null, mons: [m.id] }); autoPick(); return !S.team.includes(m.id) && !spare(S.mons[1]).includes(m);`);
+t('expeditions survive save/load, ghosts dropped', `addMon(makeMon({ el: 'fire', tier: 'basic' })); addMon(makeMon({ el: 'fire', tier: 'basic' })); const id = S.mons[1].id; S.team = [S.mons[0].id];
+  S.exp = [{ k: 'l', start: 5, coins: 9, egg: 'premium', mons: [id, 999] }, { k: 'zz', start: 1, mons: [id] }]; const s = sanitize(JSON.parse(JSON.stringify(S)));
+  return s.exp.length === 1 && s.exp[0].mons.length === 1 && s.exp[0].mons[0] === id;`);
+t('daily trial: one element, reward once', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 100; m.rar = 3; m.bh *= 5; m.ba *= 5; addMon(m);
+  const E = trialEnemies(); const same = E.every(u => u.el === trialEl()); fight('trial'); skip(); const ok = B.win && S.shards >= 3 && !trialReady(); B = null; fight('trial'); return same && ok && B === null && S.floor === 1;`);
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

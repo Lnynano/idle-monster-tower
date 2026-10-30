@@ -200,7 +200,7 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .odds.good{background:var(--ok);color:#06310f}.odds.mid{background:var(--gold);color:var(--ink)}.odds.bad{background:var(--bad);color:#fff}
 .card.goal{box-shadow:inset 0 0 0 2px var(--gold),inset 0 3px 0 4px #ffffff14,0 5px 0 var(--woodd),0 8px 14px #0007}
 .ach{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 2px;border-bottom:1px dashed #ffffff22}
-.ach span{display:flex;flex-direction:column;font-weight:800;color:var(--cream)}
+.ach>span{flex:1;display:flex;flex-direction:column;font-weight:800;color:var(--cream)}
 .ach small{font-weight:700}
 .ach.done{opacity:.6}
 #view .ach button{margin:0;padding:6px 12px}
@@ -243,3 +243,9 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .pop.skillname{color:#7ad0ff;font-size:20px}
 @keyframes ready{50%{transform:translateY(-3px);box-shadow:0 7px 0 #0006,0 0 0 3px #7ad0ff}}
 @keyframes cast{0%{transform:scale(1)}40%{transform:scale(1.35) rotate(-6deg)}100%{transform:scale(1)}}
+/* ---------- expeditions ---------- */
+.mini{display:inline-block;width:26px;height:26px;vertical-align:middle;margin-right:-4px}
+.mini .beast{width:26px;height:26px}
+.ach .bar{width:100%;min-width:120px}
+.mon .tm.away{background:#2d6fc4}
+.party{display:flex;align-items:center;gap:2px}

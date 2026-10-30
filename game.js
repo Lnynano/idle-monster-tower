@@ -64,7 +64,7 @@ function mult(a, d) {
 
 // ---------- state ----------
 const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null, shards: 0, ascends: 0, top: 1,
-  seen: [], quest: 0, ach: [], fusions: 0, fed: 0, sweepAt: 0, daily: '', streak: 0 });
+  seen: [], quest: 0, ach: [], fusions: 0, fed: 0, sweepAt: 0, daily: '', streak: 0, exp: [], trialDay: '' });
 let S, last, cur = 'home', B = null;
 
 function sanitize(o) {
@@ -91,6 +91,12 @@ function sanitize(o) {
   s.ach = strs(o.ach, x => ACH.some(a => a.id === x));
   s.quest = Math.min(QUESTS.length, Math.floor(n(o.quest, 0))); s.fusions = Math.floor(n(o.fusions, 0)); s.fed = Math.floor(n(o.fed, 0));
   s.sweepAt = n(o.sweepAt, 0); s.daily = typeof o.daily === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.daily) ? o.daily : ''; s.streak = Math.floor(n(o.streak, 0));
+  s.trialDay = typeof o.trialDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.trialDay) ? o.trialDay : '';
+  // expeditions: only known trip types, only monsters that still exist, never a team member
+  const used = new Set();
+  s.exp = (Array.isArray(o.exp) ? o.exp : []).filter(x => x && EXP[x.k] && Array.isArray(x.mons) && Number.isFinite(x.start)).slice(0, 3).map(x => ({
+    k: x.k, start: x.start, coins: n(x.coins, 0), egg: EXP[x.k].egg, mons: x.mons.filter(id => ids.has(id) && !used.has(id) && !s.team.includes(id) && used.add(id)).slice(0, 3),
+  })).filter(x => x.mons.length);
   return s;
 }
 function load() { try { const r = localStorage.getItem(SAVE_KEY); if (r) return sanitize(JSON.parse(r)); } catch (e) { } return fresh(); }
@@ -175,9 +181,9 @@ function hud() {
   document.querySelectorAll('[data-cost]').forEach(b => b.disabled = S.coins < +b.dataset.cost);
   const dot = (t, on) => { const b = $(`#tabs [data-t="${t}"]`); if (b) b.classList.toggle('dot', on); };
   const goal = QUESTS[S.quest] && QUESTS[S.quest].done();
-  dot('home', S.eggs.length > 0 || S.coins >= genCost() || goal || dailyReady() || ACH.some(achReady));
+  dot('home', S.eggs.length > 0 || S.coins >= genCost() || goal || dailyReady() || ACH.some(achReady) || expReady());
   dot('mons', canFuseAny());
-  dot('tower', !!shardGain() || goal || (S.best > 1 && Date.now() >= S.sweepAt) || (!B && !S.team.length && S.mons.length > 0));
+  dot('tower', !!shardGain() || goal || trialReady() || (S.best > 1 && Date.now() >= S.sweepAt) || (!B && !S.team.length && S.mons.length > 0));
 }
 // any two unlocked-fodder monsters of same element + rarity below Legendary
 function canFuseAny() {
@@ -259,7 +265,7 @@ function buyEgg(tier) {
 function card(m, attrs = '', big = false, extra = '') {
   const s = stats(m);
   return `<div class="mon r${m.rar} el-${m.el}${big ? ' big' : ''}" ${attrs}><div class="rib">${RARS[m.rar]}</div>
-    <div class="art"><span class="ic">${monArt(m)}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${extra}</div>
+    <div class="art"><span class="ic">${monArt(m)}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${!big && busy(m.id) ? '<span class="tm away">AWAY</span>' : ''}${extra}</div>
     <b class="nm">${esc(m.name)}</b><div class="st"><span>❤${fmt(s.hp)}</span><span>⚔${fmt(s.atk)}</span><span>⚡${s.spd}</span></div><div class="tr">${TRAITS[m.trait].n}</div></div>`;
 }
 function hatch(id) {
@@ -286,7 +292,7 @@ const fuseOk = (a, b) => a && b && a !== b && a.el === b.el && a.rar === b.rar &
 const fuseChance = (a, b) => Math.min(.95, FUSE[a.rar].p + (a.lvl + b.lvl - 2) * .005);
 function fuseMenu(id) {
   const a = monById(id); if (!a || a.rar >= 3) return;
-  const l = S.mons.filter(b => fuseOk(a, b) && !b.lock).sort((x, y) => y.lvl - x.lvl);
+  const l = S.mons.filter(b => fuseOk(a, b) && !b.lock && !busy(b.id)).sort((x, y) => y.lvl - x.lvl);
   modal(`<h3>Fuse ${esc(a.name)} → ${RARS[a.rar + 1]}</h3><p>Pick a ${ELS[a.el].i} ${RARS[a.rar]} to sacrifice. It is lost even if fusion fails. 🔒 locked monsters are hidden.</p>
     ${l.length ? `<div class="grid">${l.map(b => card(b, `data-act="fuseask" data-a="${a.id}" data-b="${b.id}"`)).join('')}</div>` : '<p>No matching monster.</p>'}
     <button class="btn alt" data-act="mon" data-id="${a.id}">Back</button>`);
@@ -317,7 +323,7 @@ function fuse(aId, bId) {
 // spent on the same curve as coin level-ups; leftover XP stays on the monster
 const feedXP = b => Math.floor(EGG.basic.cost * [1, 3, 10, 30][b.rar] * (1 + (b.lvl - 1) * .1));
 function levelsFrom(a, xp) { let l = a.lvl, x = (a.xp || 0) + xp; while (l < MAX_LVL && x >= lvCostAt(a, l)) { x -= lvCostAt(a, l); l++; } return { l, x }; }
-const spare = a => S.mons.filter(b => b !== a && !b.lock && !S.team.includes(b.id));
+const spare = a => S.mons.filter(b => b !== a && !b.lock && !S.team.includes(b.id) && !busy(b.id));
 function feedMenu(id) {
   const a = monById(id); if (!a) return;
   const l = spare(a).sort((x, y) => x.rar - y.rar || x.lvl - y.lvl), commons = l.filter(b => b.rar === 0);
@@ -414,6 +420,68 @@ function dailyCard() {
   if (!dailyReady()) return '';
   return `<section class="card"><h3>🎁 Daily chest</h3><p style="text-align:center">~15 min of mine income + an egg. Day 7 of a streak: Premium egg.${S.streak ? `<br>Streak: ${S.streak} day${S.streak > 1 ? 's' : ''}` : ''}</p>
     <div class="ctl"><button data-act="daily">Open chest</button></div></section>`;
+}
+
+// ---------- expeditions ----------
+// send spare monsters away; they come back with coins (and eggs on longer trips). Timestamps, so it runs offline.
+const EXP = {
+  s: { n: 'Short trip', dur: 15 * 60e3, coin: .5, egg: null },
+  m: { n: 'Day hike', dur: 3600e3, coin: .45, egg: 'basic' },
+  l: { n: 'Grand quest', dur: 4 * 3600e3, coin: .4, egg: 'premium' },
+};
+const busy = id => S.exp.some(x => x.mons.includes(id));
+const expLeft = x => x.start + EXP[x.k].dur - Date.now();
+const expReady = () => S.exp.some(x => expLeft(x) <= 0);
+// coins = income over the trip x rate, more for bigger and rarer parties
+const expCoins = (k, party) => Math.floor(rate() * EXP[k].dur / 1000 * EXP[k].coin * (.5 + .25 * party.length + .1 * party.reduce((t, m) => t + m.rar, 0)));
+let expPick = { k: 's', ids: [] };
+function expMenu() {
+  const free = S.mons.filter(m => !S.team.includes(m.id) && !busy(m.id)).sort((a, b) => b.rar - a.rar || b.lvl - a.lvl);
+  const party = expPick.ids.map(monById).filter(Boolean), e = EXP[expPick.k];
+  modal(`<h3>🧭 New expedition</h3><div class="chips qty">${Object.keys(EXP).map(k => `<button class="${expPick.k === k ? 'on' : ''}" data-act="expk" data-k="${k}">${EXP[k].n} · ${EXP[k].dur / 60e3 >= 60 ? EXP[k].dur / 3600e3 + 'h' : EXP[k].dur / 60e3 + 'm'}</button>`).join('')}</div>
+    <p style="text-align:center">Pick up to 3 spare monsters (${party.length}/3). Team members stay home.<br>Reward: 🪙${fmt(expCoins(expPick.k, party))}${e.egg ? ` + ${e.egg === 'premium' ? '🪺' : '🥚'}` : ''}</p>
+    ${free.length ? `<div class="grid">${free.map(m => card(m, `data-act="exptog" data-id="${m.id}"`, false, expPick.ids.includes(m.id) ? '<span class="adv up">✔</span>' : '')).join('')}</div>` : '<p>No spare monsters. Hatch more eggs.</p>'}
+    <button data-act="expgo" ${party.length ? '' : 'disabled'}>Send party</button><button class="btn alt" data-act="close">Cancel</button>`);
+}
+function expSend() {
+  const party = expPick.ids.map(monById).filter(m => m && !S.team.includes(m.id) && !busy(m.id));
+  if (!party.length || S.exp.length >= 3) return;
+  S.exp.push({ k: expPick.k, start: Date.now(), coins: expCoins(expPick.k, party), egg: EXP[expPick.k].egg, mons: party.map(m => m.id) });
+  expPick.ids = []; save(); closeModal(); render(); toast(`Party left on a ${EXP[S.exp[S.exp.length - 1].k].n}`);
+}
+function expClaim(i) {
+  const x = S.exp[i]; if (!x || expLeft(x) > 0) return;
+  S.exp.splice(i, 1);
+  const got = giveReward({ coins: x.coins, egg: x.egg });
+  save(); render(); toast('🧭 Expedition back: ' + got);
+}
+const fmtLeft = ms => { if (ms <= 0) return 'Done!'; const m = Math.ceil(ms / 60e3); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+function expCard() {
+  return `<section class="card"><h3>🧭 Expeditions ${S.exp.length}/3</h3>${S.exp.map((x, i) => {
+    const left = expLeft(x), pct = Math.min(100, 100 - left / EXP[x.k].dur * 100);
+    return `<div class="ach"><span><b class="party">${x.mons.map(monById).filter(Boolean).map(m => `<i class="mini">${monArt(m)}</i>`).join('')} ${EXP[x.k].n}</b><small>${fmtLeft(left)} · 🪙${fmt(x.coins)}${x.egg ? (x.egg === 'premium' ? ' + 🪺' : ' + 🥚') : ''}</small>
+      <div class="bar"><i style="width:${pct}%"></i></div></span>${left <= 0 ? `<button data-act="expclaim" data-i="${i}">Claim</button>` : ''}</div>`;
+  }).join('')}${S.exp.length < 3 ? '<div class="ctl"><button data-act="expmenu">Send a party</button></div>' : ''}</section>`;
+}
+
+// ---------- daily trial ----------
+// one element per day; all enemies share it, so counter-picking wins. Retry until cleared.
+const trialEl = () => Object.keys(ELS)[Math.floor(new Date(today()).getTime() / 864e5) % 5];
+const trialFloor = () => Math.max(5, S.best + 2);
+const trialReady = () => S.trialDay !== today() && S.mons.length > 0;
+function trialEnemies() {
+  const el = trialEl(), r = mulberry(hashStr(today()));
+  return enemies(trialFloor()).map((u, i) => ({ ...u, el, icon: pick(r, ICONS[el]), name: genName(r, el), seed: hashStr(today() + i), boss: i === 1, trait: i === 1 ? 'firststrike' : u.trait }));
+}
+function trialCard() {
+  const el = trialEl();
+  return `<section class="card"><h3>🏟️ Daily Trial</h3><p style="text-align:center">Today: <b>${ELS[el].i} ${ELS[el].n}</b> foes at floor ${trialFloor()} power.<br>Bring ${ELS[weakTo(el)].i} ${ELS[weakTo(el)].n}! Reward: 💎2 + 🪺</p>
+    ${trialReady() ? '<div class="ctl"><button data-act="trial">Enter the Trial</button></div>' : `<p style="text-align:center">${S.trialDay === today() ? '✅ Cleared today. New trial tomorrow.' : 'Hatch a monster first.'}</p>`}</section>`;
+}
+function trialResult(win) {
+  if (!win) return { rw: 0, chest: false };
+  S.trialDay = today(); S.shards += 2; S.eggs.push({ id: S.nextId++, el: pick(Math.random, BASIC), tier: 'premium' }); S.changed = Date.now();
+  return { rw: 0, chest: true };
 }
 
 // ---------- ascend ----------
@@ -542,10 +610,12 @@ function resolveFight() { const f = S.floor, res = simulate([...enemies(f), ...t
 // auto skills: per device; always on while auto-climbing
 let autoSk = false;
 try { autoSk = localStorage.getItem('imt_autosk') === '1'; } catch (e) { }
-function fight() {
+function fight(mode) {
   if (!teamMons().length || B) return;
-  const U = [...enemies(S.floor), ...teamUnits(teamMons())], st = newBattle(U);
-  B = { st, U, f: S.floor, cur: U.map(u => u.hp), en: U.map(() => 0), log: [], done: false, t: 0 };
+  const trial = mode === 'trial'; if (trial && !trialReady()) return;
+  const f = trial ? trialFloor() : S.floor, U = [...(trial ? trialEnemies() : enemies(f)), ...teamUnits(teamMons())], st = newBattle(U);
+  if (trial) cur = 'tower';
+  B = { st, U, f, trial, cur: U.map(u => u.hp), en: U.map(() => 0), log: [], done: false, t: 0 };
   render(); B.t = setInterval(step, 450 / speed);
 }
 // battle playback speed, per device
@@ -632,10 +702,10 @@ function skip() {
 function finishBattle() {
   if (B.done) return;
   clearInterval(B.t); B.done = true; B.win = B.st.win;
-  Object.assign(B, applyResult(B.f, B.win)); save();
+  Object.assign(B, B.trial ? trialResult(B.win) : applyResult(B.f, B.win)); save();
   if (cur === 'tower') render();
   if (B.win) { vib(30); SFX.win(); } else SFX.lose();
-  if (!climb) return;
+  if (!climb || B.trial) return;
   if (!B.win) { toast(`Auto-climb stopped at floor ${B.f}`); return; }
   const b = B;
   // keep climbing only while the player is watching the tower with nothing open
@@ -659,9 +729,9 @@ function arenaUnit(u, i) {
 function vArena() {
   const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
   const res = B.done ? `<div class="res ${B.win ? 'win' : 'lose'}">${B.win ? `<div class="stars">${'★'.repeat(alive)}${'☆'.repeat(3 - alive)}</div>` : ''}
-    <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}${B.chest ? '<br>🎁 Boss chest: Premium egg!' : ''}` : `Floor ${B.f} holds. Level up, feed, or try a team with ▲ arrows.`}</p>
-    <button data-act="cont">${B.win ? 'Next floor ▶' : 'Try again'}</button></div>` : '';
-  return `<div class="floorhead"><h2>Floor ${B.f}</h2></div>
+    <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.trial ? (B.win ? 'Trial cleared! +💎2 + 🪺 Premium egg' : `Bring ${ELS[weakTo(trialEl())].i} monsters and try again.`) : B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}${B.chest ? '<br>🎁 Boss chest: Premium egg!' : ''}` : `Floor ${B.f} holds. Level up, feed, or try a team with ▲ arrows.`}</p>
+    <button data-act="cont">${B.trial ? 'Back' : B.win ? 'Next floor ▶' : 'Try again'}</button></div>` : '';
+  return `<div class="floorhead"><h2>${B.trial ? 'Daily Trial' : 'Floor ' + B.f}</h2></div>
   <div class="arena" style="--arena:${biome(B.f).c}"><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
   <div class="vs">VS</div>
   <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>${res}</div>
@@ -682,7 +752,7 @@ function vHome() {
   </div></section>
   <section class="card"><h3>🪹 Nest (${S.eggs.length})</h3><p style="text-align:center">Tap an egg to hatch. Element shown, rarity is a surprise.</p>
     <div class="eggs">${eg || '<p>Empty nest. Buy an egg above.</p>'}</div>
-    ${S.eggs.length > 1 ? '<div class="ctl"><button data-act="hatchall">Hatch all</button></div>' : ''}</section>${achCard()}`;
+    ${S.eggs.length > 1 ? '<div class="ctl"><button data-act="hatchall">Hatch all</button></div>' : ''}</section>${expCard()}${achCard()}`;
 }
 function vMons() {
   if (!S.mons.length) return '<section class="card"><h3>📖 Bestiary</h3><p style="text-align:center">No monsters yet. Buy and hatch an egg in the Village.</p></section>';
@@ -712,7 +782,7 @@ function vTower() {
   <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick team</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button></div>
   ${S.best > 1 ? `<div class="ctl"><button class="btn alt" data-act="sweep" ${sw > 0 ? 'disabled' : ''}>🧹 Sweep floor ${S.best - 1}${sw > 0 ? ` · ready in ${Math.ceil(sw / 60000)}m` : ` · +🪙${fmt(reward(S.best - 1))}`}</button></div>` : ''}
   <p class="legend">▲ strong / ▼ weak vs this floor · 🔥 > 🌿 > 💧 > 🔥 ×2 (weak ×0.6)<br>🌑 / ✨: ×1.75 vs basics, ×2.5 vs each other</p>
-  <section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
+  ${trialCard()}<section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
     <p>Each 💎: +1% monster stats, +5% coins. Ascending resets coins, generator, floor and levels. Monsters, rarity and eggs stay.</p>
     ${shardGain() ? `<button data-act="ascend">Ascend for 💎${shardGain()}</button>` : `<p>Unlocks at floor ${ASCEND_AT}.${S.top > 1 ? ` All-time best: ${S.top}.` : ''}</p>`}</section>`;
 }
@@ -741,6 +811,7 @@ function closeModal() { $('#modal').hidden = true; }
 function detail(id) {
   const m = monById(id); if (!m) return;
   const maxed = m.lvl >= MAX_LVL, g = bulk(l => lvCostAt(m, l), m.lvl, MAX_LVL), now = stats(m), nx = statsAt(m, m.lvl + g.k);
+  if (busy(m.id)) return modal(`${card(m, '', true)}<p style="text-align:center">🧭 Away on an expedition. Back in ${fmtLeft(expLeft(S.exp.find(x => x.mons.includes(m.id))))}.</p><button class="btn alt" data-act="close">Close</button>`);
   modal(`${card(m, '', true)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}<br>⚡ ${SKILLS[m.el].n}: ${SKILLS[m.el].d}</p>
     ${maxed ? '<p style="text-align:center">Max level</p>' : `${qtyChips()}<p style="text-align:center">Lv${m.lvl} → <b>Lv${m.lvl + g.k}</b>: ❤${fmt(now.hp)} → <b>${fmt(nx.hp)}</b> · ⚔${fmt(now.atk)} → <b>${fmt(nx.atk)}</b></p>
     <button data-act="lvl" data-id="${m.id}" data-cost="${g.c}">Level up${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`}
@@ -750,7 +821,7 @@ function detail(id) {
     <button class="btn alt" data-act="close">Close</button>`, false, m.id);
 }
 function picker(i) {
-  const l = S.mons.filter(m => !S.team.includes(m.id)).sort((a, b) => b.rar - a.rar || b.lvl - a.lvl);
+  const l = S.mons.filter(m => !S.team.includes(m.id) && !busy(m.id)).sort((a, b) => b.rar - a.rar || b.lvl - a.lvl);
   modal(`<h3>Slot ${i + 1}</h3>${l.length ? `<div class="grid">${l.map(m => card(m, `data-act="pick" data-id="${m.id}" data-i="${i}"`)).join('')}</div>` : '<p>No free monsters.</p>'}
     ${S.team[i] ? `<button data-act="clear" data-i="${i}">Remove from slot</button>` : ''}<button class="btn alt" data-act="close">Cancel</button>`);
 }
@@ -758,7 +829,7 @@ function autoPick() {
   // power x (damage dealt / damage taken) against this floor's enemies
   const E = enemies(S.floor), avg = f => E.reduce((t, u) => t + f(u), 0) / E.length;
   const pw = m => { const s = stats(m); return s.hp * s.atk * avg(u => mult(m.el, u.el)) / avg(u => mult(u.el, m.el)); };
-  S.team = [...S.mons].sort((a, b) => pw(b) - pw(a)).slice(0, 3).map(m => m.id); save(); render();
+  S.team = S.mons.filter(m => !busy(m.id)).sort((a, b) => pw(b) - pw(a)).slice(0, 3).map(m => m.id); save(); render();
 }
 
 const ACT = {
@@ -789,7 +860,13 @@ const ACT = {
   pick: d => { S.team[+d.i] = +d.id; S.team = S.team.filter(Boolean); save(); closeModal(); render(); },
   clear: d => { S.team.splice(+d.i, 1); save(); closeModal(); render(); },
   auto: autoPick,
-  fight,
+  fight: () => fight(),
+  trial: () => fight('trial'),
+  expmenu: () => { expPick.ids = expPick.ids.filter(id => monById(id) && !busy(id) && !S.team.includes(id)); expMenu(); },
+  expk: d => { expPick.k = d.k; expMenu(); },
+  exptog: d => { const id = +d.id, i = expPick.ids.indexOf(id); if (i >= 0) expPick.ids.splice(i, 1); else if (expPick.ids.length < 3) expPick.ids.push(id); expMenu(); },
+  expgo: expSend,
+  expclaim: d => expClaim(+d.i),
   skip,
   speed: cycleSpeed,
   ascend,
@@ -813,14 +890,14 @@ const ACT = {
   },
 };
 // acts that change progress; marks the save dirty for cloud sync
-const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock', 'feed', 'feedall', 'sweep', 'goal', 'ach', 'daily']);
+const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock', 'feed', 'feedall', 'sweep', 'goal', 'ach', 'daily', 'expgo', 'expclaim']);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' && !e.target.dataset.lock) return closeModal();
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
   const a = b.dataset.act, f = ACT[a]; if (!f) return;
   f(b.dataset);
   if (a === 'buy' || a === 'gen' || a === 'lvl' || a === 'feed' || a === 'feedall') SFX.buy();
-  else if (a === 'goal' || a === 'ach' || a === 'daily' || a === 'sweep') SFX.coin();
+  else if (a === 'goal' || a === 'ach' || a === 'daily' || a === 'sweep' || a === 'expclaim') SFX.coin();
   if (MUTATE.has(a)) { S.changed = Date.now(); save(); }
 });
 
@@ -834,14 +911,14 @@ syncBoot();
 
 // ---------- what's new ----------
 // shown once per device after an update; brand-new players skip it
-const NEWS_VER = 17, NEWS = [
-  '🌍 Tower biomes: each 10 floors has its own look and favorite element',
-  '👑 Boss floors now have a crowned King with a trait',
-  '🔎 Enemy cards show their weakness and traits',
-  '🔁 Auto-climb keeps fighting while you are away (up to 25 floors)',
-  '💥 Element bursts and SUPER hits in battle',
-  '🔊 Sound effects (toggle in Settings)',
-];
+const NEWS_VER = 21, NEWS = [
+  '🎨 Every monster now has its own hand-made look (no more emoji!)',
+  '⚡ Battles are live: each monster charges a skill. Tap it when it glows',
+  '🔥 Inferno · 🌿 Bloom · 💧 Tsunami · 🌑 Hex · ✨ Aegis',
+  '🧭 Expeditions: send spare monsters on trips for coins and eggs (Village)',
+  '🏟️ Daily Trial: one element per day, win 💎2 + a Premium egg (Tower)',
+  '👑 Bosses fire skills too, so watch their red charge bar',
+]
 try {
   const seenVer = +localStorage.getItem('imt_news') || 0;
   if (seenVer < NEWS_VER) {
