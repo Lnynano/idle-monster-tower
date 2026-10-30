@@ -243,15 +243,24 @@ function loadSheet() {
   sheet.onload = () => { sheetReady = true; artCache.clear(); render(); };
   sheet.src = 'assets/monsters/sheet.png';
 }
+// returns a placeholder <canvas>; paintSprites() copies the cached sprite into it after the HTML is inserted
+// (no image encoding and tiny HTML, so long monster lists stay fast)
+const spriteTag = (key, cv) => `<canvas class="beast spr" width="${cv.width}" height="${cv.height}" data-sp="${key}"></canvas>`;
+function paintSprites(root) {
+  root.querySelectorAll('canvas[data-sp]').forEach(cv => { const src = artCache.get(cv.dataset.sp); if (src) cv.getContext('2d').drawImage(src, 0, 0); cv.removeAttribute('data-sp'); });
+}
 function sprite(el, icon, seed, rar, foe, boss) {
-  const key = [el, icon, seed, rar, foe ? 1 : 0, boss ? 1 : 0].join('|');
-  if (artCache.has(key)) return artCache.get(key);
+  const key = [el, ICONS[el].indexOf(icon), seed, rar, foe ? 1 : 0, boss ? 1 : 0].join('-');
+  if (artCache.has(key)) return spriteTag(key, artCache.get(key));
   const r = mulberry(seed), col = KCOL[el], sp = Math.max(0, ICONS[el].indexOf(icon)), pk = a => a[Math.floor(r() * a.length)];
   const c = document.createElement('canvas'); c.width = 168; c.height = 184;
   const g = c.getContext('2d'); g.scale(.4, .4);
+  // track the drawn area so the sprite can be cropped without reading pixels back
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
   const P = (n, x, y, flip, k = 1) => {
     const a = ATLAS[n]; if (!a) return;
     const [sx, sy, w, h] = a;
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x + w * k); y1 = Math.max(y1, y + h * k);
     g.save(); g.translate(x + (flip ? w * k : 0), y); g.scale(flip ? -k : k, k); g.drawImage(sheet, sx, sy, w, h, 0, 0, w, h); g.restore();
   };
   const sz = n => ATLAS[n] || [0, 0, 0, 0];
@@ -275,15 +284,12 @@ function sprite(el, icon, seed, rar, foe, boss) {
   else { const k = .62; P(E, cx - ew * k / 2, ey - 6, false, k); P(E, cx - 8 - ew * k, ey + eh * k * .55, false, k); P(E, cx + 8, ey + eh * k * .55, false, k); mouthY = ey + eh * k * 1.55 + 8; }
   const M = foe ? pk(['mouth_closed_fangs', 'mouth_closed_teeth', 'mouthC', 'mouthH', 'mouthJ']) : pk(['mouthA', 'mouthB', 'mouthD', 'mouthE', 'mouthF', 'mouthG', 'mouthI', 'mouth_closed_happy']);
   const mw = sz(M)[2]; P(M, cx - mw * .45, Math.min(mouthY, bot - 40), false, .9);
-  // crop to the drawn pixels so every monster fills its frame, feet on the bottom edge
-  const px = g.getImageData(0, 0, c.width, c.height).data;
-  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0;
-  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
-  const w = Math.max(1, x1 - x0 + 1), h = Math.max(1, y1 - y0 + 1), sq = Math.max(w, h) + 4, o = document.createElement('canvas');
-  o.width = o.height = sq; o.getContext('2d').drawImage(c, x0, y0, w, h, (sq - w) / 2, sq - h - 2, w, h);
-  const out = `<img class="beast spr" src="${o.toDataURL()}" alt="">`;
-  artCache.set(key, out);
-  return out;
+  // crop to the drawn area so every monster fills its frame, feet on the bottom edge
+  const X0 = Math.max(0, Math.floor(x0 * .4)), Y0 = Math.max(0, Math.floor(y0 * .4)), X1 = Math.min(c.width, Math.ceil(x1 * .4)), Y1 = Math.min(c.height, Math.ceil(y1 * .4));
+  const w = Math.max(1, X1 - X0), h = Math.max(1, Y1 - Y0), sq = Math.max(w, h) + 4, o = document.createElement('canvas');
+  o.width = o.height = sq; o.getContext('2d').drawImage(c, X0, Y0, w, h, (sq - w) / 2, sq - h - 2, w, h);
+  artCache.set(key, o);
+  return spriteTag(key, o);
 }
 const monArt = m => sheetReady ? sprite(m.el, m.icon, hashStr(m.id + m.name), m.rar) : art(m.el, m.icon, hashStr(m.id + m.name), m.rar);
 const unitArt = u => sheetReady ? sprite(u.el, u.icon, u.seed, Math.min(3, u.rar | 0), u.side === 'e', u.boss) : art(u.el, u.icon, u.seed, u.rar);
@@ -819,9 +825,11 @@ function vMons() {
     <p style="text-align:center">Each new species: +💎1</p></section>`;
   return `${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
   <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
-  <p>${l.length} of ${S.mons.length} · tap for details, level up, feed, fuse</p><div class="grid">${l.map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>`;
+  <p>${l.length} of ${S.mons.length} · tap for details, level up, feed, fuse</p><div class="grid">${l.slice(0, monShow).map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>
+  ${l.length > monShow ? `<div class="ctl"><button class="btn alt" data-act="monmore">Show more (${l.length - monShow} left)</button></div>` : ''}`;
 }
-let monEl = 'all', monSort = 'rar';
+// long lists render in pages
+let monEl = 'all', monSort = 'rar', monShow = 48;
 function vTower() {
   if (B) return vArena();
   const E = enemies(S.floor), boss = S.floor % 10 === 0;
@@ -853,7 +861,7 @@ const exportCode = () => { save(); return 'IMT1:' + btoa(unescape(encodeURICompo
 
 function render() {
   document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === cur));
-  $('#view').innerHTML = { home: vHome, mons: vMons, tower: vTower, set: vSet }[cur]();
+  const v = $('#view'); v.innerHTML = { home: vHome, mons: vMons, tower: vTower, set: vSet }[cur](); paintSprites(v);
   if (cur === 'set') $('#exp').value = exportCode();
   hud();
 }
@@ -861,7 +869,7 @@ function render() {
 // ---------- ui ----------
 let toastT;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2600); }
-function modal(html, lock, mon) { const m = $('#modal'); m.innerHTML = `<div class="modal">${html}</div>`; m.hidden = false; m.dataset.lock = lock ? '1' : ''; m.dataset.mon = mon || ''; hud(); }
+function modal(html, lock, mon) { const m = $('#modal'); m.innerHTML = `<div class="modal">${html}</div>`; paintSprites(m); m.hidden = false; m.dataset.lock = lock ? '1' : ''; m.dataset.mon = mon || ''; hud(); }
 function closeModal() { $('#modal').hidden = true; }
 function detail(id) {
   const m = monById(id); if (!m) return;
@@ -925,8 +933,9 @@ const ACT = {
   skip,
   speed: cycleSpeed,
   ascend,
-  monel: d => { monEl = d.k; render(); },
-  monsort: d => { monSort = d.k; render(); },
+  monel: d => { monEl = d.k; monShow = 48; render(); },
+  monsort: d => { monSort = d.k; monShow = 48; render(); },
+  monmore: () => { const y = $('#view').scrollTop; monShow += 48; render(); $('#view').scrollTop = y; },
   cont: () => { B = null; render(); },
   close: closeModal,
   copy: () => { const t = $('#exp'); t.select(); (navigator.clipboard ? navigator.clipboard.writeText(t.value) : Promise.reject()).then(() => toast('Copied'), () => { document.execCommand('copy'); toast('Copied'); }); },

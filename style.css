@@ -19,7 +19,7 @@ background:
  radial-gradient(1px 1px at 40px 60px,#fffc 50%,#0000 51%) 0 0/61px 71px,
  radial-gradient(1px 1px at 25px 10px,#fff8 50%,#0000 51%) 0 0/43px 37px,
  linear-gradient(var(--night1),var(--night2) 55%,var(--night3));
-background-attachment:fixed}
+}
 /* moon + castle silhouette backdrop */
 body::before{content:"";position:fixed;top:70px;right:max(18px,calc(50% - 260px));width:74px;height:74px;border-radius:50%;
 background:radial-gradient(circle at 35% 35%,#fffbe6,#f3df9a 60%,#d9bd6a);opacity:.85;pointer-events:none;z-index:0}
@@ -266,3 +266,4 @@ filter:brightness(.82) sepia(1) saturate(3.2) hue-rotate(-6deg);opacity:.85;z-in
 .bestiary .beast.spr{width:40px;height:40px}
 .mon .art{height:70px}
 .mon.big .art{height:140px}
+.grid .beast.spr{filter:none}
