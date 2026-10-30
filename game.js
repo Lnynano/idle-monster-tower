@@ -230,8 +230,63 @@ function art(el, icon, seed, rar = 0) {
   if (r() < .5) o += `<circle cx="${f(cx - gap - 5)}" cy="${f(my)}" r="3" fill="#ff7a9a" opacity=".55"/><circle cx="${f(cx + gap + 5)}" cy="${f(my)}" r="3" fill="#ff7a9a" opacity=".55"/>`;
   return `<svg class="beast" viewBox="0 0 100 100" aria-hidden="true">${o}</svg>`;
 }
-const monArt = m => art(m.el, m.icon, hashStr(m.id + m.name), m.rar);
-const unitArt = u => art(u.el, u.icon, u.seed, u.rar);
+// ---------- sprite monsters (Kenney Monster Builder Pack, CC0) ----------
+// assembled from parts on a canvas once per monster and cached; the SVG art above is the fallback until the sheet loads
+const KCOL = { fire: 'red', grass: 'green', water: 'blue', dark: 'dark', light: 'yellow' };
+const KDET = { fire: ['horn_large', 'horn_small'], grass: ['antenna_large', 'ear'], water: ['ear_round', 'antenna_small'], dark: ['horn_large', 'ear'], light: ['antenna_small', 'ear_round'] };
+const KEYES = [['eye_cute_light', 'eye_cute_dark'], ['eye_human', 'eye_human_blue', 'eye_human_green'], ['eye_yellow', 'eye_blue', 'eye_human_red'], ['eye_psycho_light', 'eye_psycho_dark']];
+let sheet = null, sheetReady = false;
+const artCache = new Map();
+function loadSheet() {
+  if (typeof Image === 'undefined' || typeof ATLAS === 'undefined') return;
+  sheet = new Image();
+  sheet.onload = () => { sheetReady = true; artCache.clear(); render(); };
+  sheet.src = 'assets/monsters/sheet.png';
+}
+function sprite(el, icon, seed, rar, foe, boss) {
+  const key = [el, icon, seed, rar, foe ? 1 : 0, boss ? 1 : 0].join('|');
+  if (artCache.has(key)) return artCache.get(key);
+  const r = mulberry(seed), col = KCOL[el], sp = Math.max(0, ICONS[el].indexOf(icon)), pk = a => a[Math.floor(r() * a.length)];
+  const c = document.createElement('canvas'); c.width = 168; c.height = 184;
+  const g = c.getContext('2d'); g.scale(.4, .4);
+  const P = (n, x, y, flip, k = 1) => {
+    const a = ATLAS[n]; if (!a) return;
+    const [sx, sy, w, h] = a;
+    g.save(); g.translate(x + (flip ? w * k : 0), y); g.scale(flip ? -k : k, k); g.drawImage(sheet, sx, sy, w, h, 0, 0, w, h); g.restore();
+  };
+  const sz = n => ATLAS[n] || [0, 0, 0, 0];
+  // species picks the body; the seed picks limbs, eyes, mouth and crest
+  const B = 'body_' + col + (boss ? 'E' : 'ABDF'[sp]), [, , bw, bh] = sz(B), cx = 210, bot = 290, top = bot - bh;
+  const L = 'leg_' + col + pk(['A', 'B', 'C', 'D', 'E']), lw = sz(L)[2];
+  const A = 'arm_' + col + pk(['A', 'B', 'C', 'D', 'E']), aw = sz(A)[2], up = r() < .3;
+  P(L, cx + bw * .12, bot - 30); P(L, cx - bw * .12 - lw, bot - 30, true);
+  P(A, cx + bw / 2 - 22, top + bh * .35, up); P(A, cx - bw / 2 + 22 - aw, top + bh * .35, !up);
+  if (boss || r() < [.4, .7, 1, 1][rar]) {
+    const D = 'detail_' + col + '_' + pk(KDET[el]), [, , dw, dh] = sz(D), k = boss ? 1.6 : 1.25;
+    P(D, cx + bw * .24 - dw * k / 2, top - dh * k + 16, false, k); P(D, cx - bw * .24 - dw * k / 2, top - dh * k + 16, true, k);
+  }
+  P(B, cx - bw / 2, top);
+  // face: foes glare, friends get eyes that get fancier with rarity
+  const E = foe ? pk(['eye_angry_blue', 'eye_angry_green', 'eye_angry_red']) : pk(KEYES[rar]), [, , ew, eh] = sz(E);
+  const ey = top + bh * (bh > 200 ? .14 : .2), n = bw < 150 ? (r() < .5 ? 1 : 2) : (r() < .25 ? 1 : r() < .75 ? 2 : 3);
+  let mouthY;
+  if (n === 1) { const k = 1.15; P(E, cx - ew * k / 2, ey, false, k); mouthY = ey + eh * k + 8; }
+  else if (n === 2) { const k = .78; P(E, cx - 6 - ew * k, ey, false, k); P(E, cx + 6, ey, false, k); mouthY = ey + eh * k + 10; if (foe) { P('eyebrowB', cx - 6 - ew * k, ey - 22, false, .8); P('eyebrowB', cx + 10, ey - 22, true, .8); } }
+  else { const k = .62; P(E, cx - ew * k / 2, ey - 6, false, k); P(E, cx - 8 - ew * k, ey + eh * k * .55, false, k); P(E, cx + 8, ey + eh * k * .55, false, k); mouthY = ey + eh * k * 1.55 + 8; }
+  const M = foe ? pk(['mouth_closed_fangs', 'mouth_closed_teeth', 'mouthC', 'mouthH', 'mouthJ']) : pk(['mouthA', 'mouthB', 'mouthD', 'mouthE', 'mouthF', 'mouthG', 'mouthI', 'mouth_closed_happy']);
+  const mw = sz(M)[2]; P(M, cx - mw * .45, Math.min(mouthY, bot - 40), false, .9);
+  // crop to the drawn pixels so every monster fills its frame, feet on the bottom edge
+  const px = g.getImageData(0, 0, c.width, c.height).data;
+  let x0 = c.width, y0 = c.height, x1 = 0, y1 = 0;
+  for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (px[(y * c.width + x) * 4 + 3] > 10) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  const w = Math.max(1, x1 - x0 + 1), h = Math.max(1, y1 - y0 + 1), sq = Math.max(w, h) + 4, o = document.createElement('canvas');
+  o.width = o.height = sq; o.getContext('2d').drawImage(c, x0, y0, w, h, (sq - w) / 2, sq - h - 2, w, h);
+  const out = `<img class="beast spr" src="${o.toDataURL()}" alt="">`;
+  artCache.set(key, out);
+  return out;
+}
+const monArt = m => sheetReady ? sprite(m.el, m.icon, hashStr(m.id + m.name), m.rar) : art(m.el, m.icon, hashStr(m.id + m.name), m.rar);
+const unitArt = u => sheetReady ? sprite(u.el, u.icon, u.seed, Math.min(3, u.rar | 0), u.side === 'e', u.boss) : art(u.el, u.icon, u.seed, u.rar);
 
 // ---------- monsters / eggs ----------
 // new monsters arrive at 80% of the team's average level so fresh pulls are usable right away
@@ -760,7 +815,7 @@ function vMons() {
   const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
   const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
   const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
-  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
+  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${sheetReady ? sprite(k.split(':')[0], k.split(':')[1], hashStr(k), 0) : art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
     <p style="text-align:center">Each new species: +💎1</p></section>`;
   return `${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
   <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
@@ -908,6 +963,7 @@ setInterval(save, 5000);
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); else tick(); });
 addEventListener('pagehide', save);
 syncBoot();
+loadSheet();
 
 // ---------- what's new ----------
 // shown once per device after an update; brand-new players skip it

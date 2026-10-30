@@ -249,3 +249,20 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .ach .bar{width:100%;min-width:120px}
 .mon .tm.away{background:#2d6fc4}
 .party{display:flex;align-items:center;gap:2px}
+/* ---------- ornate gold frames (Kenney Fantasy UI Borders, CC0) ---------- */
+.card,.modal{position:relative}
+.card::after,.modal::after{content:"";position:absolute;inset:4px;pointer-events:none;border:14px solid transparent;border-image:url(assets/ui/frame.png) 32 stretch;
+filter:brightness(.82) sepia(1) saturate(3.2) hue-rotate(-6deg);opacity:.85;z-index:0}
+.card>*,.modal>*{position:relative;z-index:1}
+.card{padding:18px 16px 16px}
+.modal{padding:20px}
+.vs::before,.vs::after{background:url(assets/ui/divider.png) center/100% 100% no-repeat;height:12px;filter:brightness(.82) sepia(1) saturate(3.2);transform:scaleX(-1)}
+.vs::after{transform:none}
+.beast.spr{object-fit:contain;filter:drop-shadow(0 4px 3px #0006)}
+.mon .beast.spr{width:68px;height:68px}
+.mon.big .beast.spr{width:136px;height:136px}
+.unit .beast.spr{width:64px;height:64px}
+.unit.king .beast.spr{width:84px;height:84px}
+.bestiary .beast.spr{width:40px;height:40px}
+.mon .art{height:70px}
+.mon.big .art{height:140px}

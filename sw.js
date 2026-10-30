@@ -1,7 +1,7 @@
 // Bump V on every deploy: the new worker installs alongside the old one and the
 // page offers a reload. Each version serves only its own cache, so files never mix.
-const V = 'imt-v22';
-const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+const V = 'imt-v23';
+const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png', 'assets/ui/frame.png', 'assets/ui/divider.png', 'assets/monsters/sheet.png', 'assets/monsters/sheet.js'];
 
 self.addEventListener('install', e => {
   // cache: 'reload' skips the HTTP cache so a new version gets fresh files
