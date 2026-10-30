@@ -78,5 +78,9 @@ t('awaken adds a star, consumes a Legendary', `const a = makeMon({ el: 'water', 
 t('egg price follows income', `const lo = eggCost('premium'); S.gen = 200; return lo === 4000 && eggCost('premium') > 4000;`);
 t('stars and essence survive save', `const a = makeMon({ el: 'water', tier: 'basic' }); a.rar = 3; a.star = 9; S.mons.push(a); S.ess = 77; S.shop.slots = 99; const s = sanitize(JSON.parse(JSON.stringify(S)));
   return s.mons[0].star === 5 && s.ess === 77 && s.shop.slots === 3;`);
+t('monster filters: rarity + spare, A-Z sort', `for (let i = 0; i < 12; i++) { const m = makeMon({ el: 'fire', tier: 'basic' }); m.rar = i % 4; addMon(m); }
+  monF = { ...MONF0, rar: '3', show: 'spare' }; const h = vMons(); const want = S.mons.filter(m => m.rar === 3 && releasable(m)).length; monF = { ...MONF0 };
+  return h.includes(want + ' of 12');`);
+t('fold hides body, keeps summary', `folds.ach = 1; const a = achCard(); folds.ach = 0; const b = achCard(); return !a.includes('class="ach') && a.includes('Tap to open') && b.includes('class="ach');`);
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

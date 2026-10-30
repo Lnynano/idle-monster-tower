@@ -478,12 +478,18 @@ function goalCard() {
   return `<section class="card goal"><h3>🎯 Goal ${S.quest + 1}/${QUESTS.length}</h3><p style="text-align:center"><b>${q.t}</b><br>Reward: ${r}</p>
     ${q.done() ? '<div class="ctl"><button data-act="goal">Claim reward</button></div>' : ''}</section>`;
 }
+// foldable cards: tap the title plaque to open/close; remembered per device
+let folds = { ach: 1, best: 1, altar: 1 };
+try { folds = JSON.parse(localStorage.getItem('imt_fold')) || folds; } catch (e) { }
+// summary shows next to the title while folded (e.g. "3 to claim")
+const fold = (k, title, body, summary = '') => `<section class="card fold${folds[k] ? ' shut' : ''}"><h3 data-act="fold" data-k="${k}">${title} <i class="fi">${folds[k] ? '▸' : '▾'}</i></h3>${folds[k] ? (summary ? `<p class="fsum" data-act="fold" data-k="${k}">${summary}</p>` : '') : body}</section>`;
 function achCard() {
   const l = [...ACH].sort((a, b) => achReady(b) - achReady(a) || S.ach.includes(a.id) - S.ach.includes(b.id));
-  return `<section class="card"><h3>🏆 Achievements ${S.ach.length}/${ACH.length}</h3>${l.map(a => {
+  const ready = ACH.filter(achReady).length;
+  return fold('ach', `🏆 Achievements ${S.ach.length}/${ACH.length}`, l.map(a => {
     const done = S.ach.includes(a.id), v = Math.min(a.v(), a.goal);
     return `<div class="ach${done ? ' done' : ''}"><span>${done ? '✅' : '🏆'} ${a.t}<small>${done ? 'Claimed' : `${v}/${a.goal}`} · 💎${a.r}</small></span>${achReady(a) ? `<button data-act="ach" data-id="${a.id}">Claim</button>` : ''}</div>`;
-  }).join('')}</section>`;
+  }).join(''), ready ? `🎉 ${ready} ready to claim. Tap to open.` : 'Tap to open');
 }
 function dailyCard() {
   if (!dailyReady()) return '';
@@ -517,11 +523,11 @@ function buyShop(k) {
 }
 function altarCard() {
   const by = [0, 1, 2, 3].map(r => S.mons.filter(m => m.rar === r && releasable(m)));
-  return `<section class="card"><h3>🔮 Soul Altar · ${fmt(S.ess)}</h3>
+  return fold('altar', `🔮 Soul Altar · ${fmt(S.ess)}`, `
     <p style="text-align:center">Release spare monsters for essence. Team, 🔒 locked and away monsters are safe.</p>
     <div class="rel">${by.map((l, r) => `<button class="btn alt" data-act="release" data-r="${r}" ${l.length ? '' : 'disabled'}>${RARS[r]} ×${l.length}<small>+🔮${fmt(l.reduce((t, m) => t + essOf(m), 0))}</small></button>`).join('')}</div>
     ${Object.keys(SHOP).map(k => { const maxed = SHOP[k].max && S.shop[k] >= SHOP[k].max, c = shopCost(k);
-      return `<div class="ach"><span>${SHOP[k].n} · Lv${S.shop[k]}<small>${SHOP[k].d} per level</small></span>${maxed ? '<small>MAX</small>' : `<button data-act="shop" data-k="${k}" ${S.ess >= c ? '' : 'disabled'}>🔮${fmt(c)}</button>`}</div>`; }).join('')}</section>`;
+      return `<div class="ach"><span>${SHOP[k].n} · Lv${S.shop[k]}<small>${SHOP[k].d} per level</small></span>${maxed ? '<small>MAX</small>' : `<button data-act="shop" data-k="${k}" ${S.ess >= c ? '' : 'disabled'}>🔮${fmt(c)}</button>`}</div>`; }).join('')}`, 'Release spares, buy upgrades');
 }
 function awakenMenu(id) {
   const a = monById(id); if (!a || a.rar < 3 || (a.star || 0) >= 5) return;
@@ -874,19 +880,31 @@ function vHome() {
 }
 function vMons() {
   if (!S.mons.length) return '<section class="card"><h3>📖 Bestiary</h3><p style="text-align:center">No monsters yet. Buy and hatch an egg in the Village.</p></section>';
-  const pw = m => { const s = stats(m); return s.hp * s.atk; };
-  const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
-  const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
-  const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
-  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${sheetReady ? sprite(k.split(':')[0], k.split(':')[1], hashStr(k), 0) : art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
-    <p style="text-align:center">Each new species: +💎1</p></section>`;
-  return `${altarCard()}${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
-  <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
+  const F = monF, pwr = new Map(S.mons.map(m => { const s = stats(m); return [m.id, s.hp * s.atk]; }));
+  // descending by default; ⇅ flips the whole order
+  const key = { rar: m => m.rar * 1e4 + (m.star || 0) * 1e3 + m.lvl, lvl: m => m.lvl * 10 + m.rar, pow: m => pwr.get(m.id), new: m => m.id, star: m => (m.star || 0) * 1e3 + m.lvl, name: null }[F.sort];
+  const show = { all: () => true, team: m => S.team.includes(m.id), spare: m => releasable(m), lock: m => m.lock, away: m => busy(m.id) }[F.show];
+  const l = S.mons.filter(m => (F.el === 'all' || m.el === F.el) && (F.rar === 'all' || m.rar === +F.rar) && show(m));
+  l.sort(key ? (a, b) => key(b) - key(a) || a.id - b.id : (a, b) => a.name.localeCompare(b.name) || a.id - b.id);
+  if (F.asc) l.reverse();
+  const chip = (k, v, label) => `<button class="${String(F[k]) === String(v) ? 'on' : ''}" data-act="monf" data-f="${k}" data-k="${v}">${label}</button>`;
+  const best = fold('best', `📖 Bestiary ${S.seen.length}/${SPECIES.length}`, `<div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${sheetReady ? sprite(k.split(':')[0], k.split(':')[1], hashStr(k), 0) : art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
+    <p style="text-align:center">Each new species: +💎1</p>`, `${SPECIES.length - S.seen.length} species left to find`);
+  return `${altarCard()}${best}${fold('sort', '🔎 Sort & filter', `<div class="sorter">
+    <div class="chips"><b>Element</b>${chip('el', 'all', 'All')}${Object.keys(ELS).map(e => chip('el', e, ELS[e].i)).join('')}</div>
+    <div class="chips"><b>Rarity</b>${chip('rar', 'all', 'All')}${RARS.map((r, i) => chip('rar', i, r[0])).join('')}</div>
+    <div class="chips"><b>Show</b>${chip('show', 'all', 'All')}${chip('show', 'team', 'Team')}${chip('show', 'spare', 'Spare')}${chip('show', 'lock', '🔒')}${chip('show', 'away', 'Away')}</div>
+    <div class="chips"><b>Sort</b>${chip('sort', 'rar', 'Rarity')}${chip('sort', 'lvl', 'Level')}${chip('sort', 'pow', 'Power')}${chip('sort', 'star', '★')}${chip('sort', 'new', 'Newest')}${chip('sort', 'name', 'A–Z')}<button data-act="monf" data-f="asc" data-k="${F.asc ? '' : '1'}">${F.asc ? '↑ Low first' : '↓ High first'}</button></div>
+    ${F.el !== 'all' || F.rar !== 'all' || F.show !== 'all' ? '<div class="ctl"><button class="btn alt" data-act="monreset">Clear filters</button></div>' : ''}</div>`,
+    [F.el !== 'all' && ELS[F.el].i, F.rar !== 'all' && RARS[F.rar], F.show !== 'all' && F.show, 'by ' + { rar: 'rarity', lvl: 'level', pow: 'power', star: 'stars', new: 'newest', name: 'name' }[F.sort]].filter(Boolean).join(' · '))}
   <p>${l.length} of ${S.mons.length} · tap for details, level up, feed, fuse</p><div class="grid">${l.slice(0, monShow).map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>
   ${l.length > monShow ? `<div class="ctl"><button class="btn alt" data-act="monmore">Show more (${l.length - monShow} left)</button></div>` : ''}`;
 }
-// long lists render in pages
-let monEl = 'all', monSort = 'rar', monShow = 48;
+// monster list filters (remembered per device); long lists render in pages
+const MONF0 = { el: 'all', rar: 'all', show: 'all', sort: 'rar', asc: false };
+let monF = { ...MONF0 }, monShow = 48;
+try { monF = { ...MONF0, ...JSON.parse(localStorage.getItem('imt_monf')) }; } catch (e) { }
+const saveMonF = () => { monShow = 48; try { localStorage.setItem('imt_monf', JSON.stringify(monF)); } catch (e) { } };
 function vTower() {
   if (B) return vArena();
   const E = enemies(S.floor), boss = S.floor % 10 === 0;
@@ -1002,8 +1020,9 @@ const ACT = {
   skip,
   speed: cycleSpeed,
   ascend,
-  monel: d => { monEl = d.k; monShow = 48; render(); },
-  monsort: d => { monSort = d.k; monShow = 48; render(); },
+  monf: d => { monF[d.f] = d.f === 'asc' ? !!d.k : d.k; saveMonF(); const y = $('#view').scrollTop; render(); $('#view').scrollTop = y; },
+  monreset: () => { monF = { ...MONF0, sort: monF.sort, asc: monF.asc }; saveMonF(); render(); },
+  fold: d => { folds[d.k] = folds[d.k] ? 0 : 1; try { localStorage.setItem('imt_fold', JSON.stringify(folds)); } catch (e) { } const y = $('#view').scrollTop; render(); $('#view').scrollTop = y; },
   monmore: () => { const y = $('#view').scrollTop; monShow += 48; render(); $('#view').scrollTop = y; },
   cont: () => { B = null; render(); },
   close: closeModal,

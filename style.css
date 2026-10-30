@@ -273,3 +273,11 @@ filter:brightness(.82) sepia(1) saturate(3.2) hue-rotate(-6deg);opacity:.85;z-in
 #view .rel button small{color:#e6dcff;font-size:11px}
 .mon .star{position:absolute;left:2px;top:20px;color:var(--gold);font-size:11px;letter-spacing:-1px;text-shadow:0 1px 0 #000,0 0 2px #000}
 #view .egg-i .cnt{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);background:var(--ink);color:var(--gold);font:900 11px/1 var(--title);padding:3px 6px;border-radius:8px;white-space:nowrap}
+/* ---------- folds & sorter ---------- */
+.card.fold>h3:first-child{cursor:pointer}
+.card .fi{font-style:normal;font-size:12px;margin-left:4px}
+.card.shut{padding-bottom:8px}
+.fsum{text-align:center;cursor:pointer;margin:0}
+.sorter .chips{align-items:center;margin:4px 0}
+.sorter .chips b{font:900 10px var(--title);color:var(--mut);width:62px;text-transform:uppercase;letter-spacing:.5px}
+#view .sorter .chips button{padding:5px 9px;font-size:12px}
