@@ -23,3 +23,7 @@ Then open http://localhost:8123/. The service worker caches files, so unregister
 ## Cloud
 
 Supabase project `idle-monster-tower`: table `saves` (one row per user, RLS) and `save_backups` (last 5, hourly, filled by trigger).
+
+## Art credits
+
+Monster parts and UI frames by [Kenney](https://kenney.nl) (CC0): Monster Builder Pack and Fantasy UI Borders. License files are in `assets/`.

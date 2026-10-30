@@ -967,14 +967,12 @@ loadSheet();
 
 // ---------- what's new ----------
 // shown once per device after an update; brand-new players skip it
-const NEWS_VER = 21, NEWS = [
-  '🎨 Every monster now has its own hand-made look (no more emoji!)',
-  '⚡ Battles are live: each monster charges a skill. Tap it when it glows',
-  '🔥 Inferno · 🌿 Bloom · 💧 Tsunami · 🌑 Hex · ✨ Aegis',
-  '🧭 Expeditions: send spare monsters on trips for coins and eggs (Village)',
-  '🏟️ Daily Trial: one element per day, win 💎2 + a Premium egg (Tower)',
-  '👑 Bosses fire skills too, so watch their red charge bar',
-]
+const NEWS_VER = 23, NEWS = [
+  '🎨 Brand-new monster art! Every monster is built from real drawn parts',
+  '🖼️ Golden framed panels everywhere',
+  '⚡ Live battles: tap a glowing monster to fire its skill',
+  '🧭 Expeditions and 🏟️ a Daily Trial for extra rewards',
+];
 try {
   const seenVer = +localStorage.getItem('imt_news') || 0;
   if (seenVer < NEWS_VER) {
