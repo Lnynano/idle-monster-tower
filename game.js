@@ -698,6 +698,24 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) save(
 addEventListener('pagehide', save);
 syncBoot();
 
+// ---------- what's new ----------
+// shown once per device after an update; brand-new players skip it
+const NEWS_VER = 17, NEWS = [
+  '🌍 Tower biomes: each 10 floors has its own look and favorite element',
+  '👑 Boss floors now have a crowned King with a trait',
+  '🔎 Enemy cards show their weakness and traits',
+  '🔁 Auto-climb keeps fighting while you are away (up to 25 floors)',
+  '💥 Element bursts and SUPER hits in battle',
+  '🔊 Sound effects (toggle in Settings)',
+];
+try {
+  const seenVer = +localStorage.getItem('imt_news') || 0;
+  if (seenVer < NEWS_VER) {
+    localStorage.setItem('imt_news', NEWS_VER);
+    if (S.hatched > 0 && $('#modal').hidden) modal(`<h3>What's new</h3><div class="card">${NEWS.map(n => `<p>${n}</p>`).join('')}</div><button data-act="close">Let's go!</button>`);
+  }
+} catch (e) { }
+
 // ---------- updates ----------
 // a new sw.js version installs in the background; offer a reload instead of waiting for the next launch
 let newWorker = null;

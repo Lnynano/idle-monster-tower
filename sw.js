@@ -1,6 +1,6 @@
 // Bump V on every deploy: the new worker installs alongside the old one and the
 // page offers a reload. Each version serves only its own cache, so files never mix.
-const V = 'imt-v17';
+const V = 'imt-v18';
 const FILES = ['./', 'index.html', 'style.css', 'game.js', 'sync.js', 'manifest.json', 'icon.svg', 'icon-192.png', 'icon-512.png'];
 
 self.addEventListener('install', e => {
