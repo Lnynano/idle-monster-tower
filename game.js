@@ -352,7 +352,7 @@ function hatchAll() {
   const good = got.filter(m => m.rar >= 1).sort((a, b) => b.rar - a.rar), best = good[0], cnt = [0, 1, 2, 3].map(r => got.filter(m => m.rar === r).length);
   vib(best && best.rar >= 2 ? [40, 60, 40, 60, 80] : 30); SFX.hatch(best ? best.rar : 0);
   modal(`<h3>Hatched ${got.length}</h3><p style="text-align:center">${cnt.map((c, r) => c ? `${c} ${RARS[r]}` : '').filter(Boolean).join(' · ')}${nNew ? `<br><b>${nNew} new species! +💎${nNew}</b>` : ''}</p>
-    ${best ? reveal(best) : ''}${good.length > 1 ? `<div class="grid">${good.slice(1).map(m => card(m)).join('')}</div>` : ''}<button data-act="close">Nice!</button>`);
+    ${best ? reveal(best) : ''}${good.length > 1 ? `<div class="grid">${good.slice(1, 13).map(m => card(m)).join('')}</div>${good.length > 13 ? `<p style="text-align:center">+${fmt(good.length - 13)} more in your collection</p>` : ''}` : ''}<button data-act="close">Nice!</button>`);
 }
 
 // ---------- fusion ----------
@@ -857,7 +857,10 @@ function vArena() {
 
 // ---------- views ----------
 function vHome() {
-  const eg = S.eggs.map(e => `<button class="egg-i ${e.tier}" data-act="hatch" data-id="${e.id}">🥚<span class="eb">${ELS[e.el].i}</span></button>`).join('');
+  const stacks = {};
+  for (const e of S.eggs) { const k = e.tier + ':' + e.el; (stacks[k] = stacks[k] || { e, n: 0 }).n++; }
+  const eg = Object.values(stacks).sort((a, b) => (b.e.tier === 'premium') - (a.e.tier === 'premium')).map(({ e, n }) =>
+    `<button class="egg-i ${e.tier}" data-act="hatch" data-id="${e.id}">🥚<span class="eb">${ELS[e.el].i}</span>${n > 1 ? `<span class="cnt">×${fmt(n)}</span>` : ''}</button>`).join('');
   return `${goalCard()}${dailyCard()}<section class="card"><h3>⛏️ Coin Mine · Lv ${S.gen}</h3>
     <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +5% per species discovered</p></div>
     ${qtyChips()}<div class="ctl">${(() => { const g = bulk(genCostAt, S.gen); return `<button data-act="gen" data-cost="${g.c}">Upgrade${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`; })()}</div></section>

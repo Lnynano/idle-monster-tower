@@ -272,3 +272,4 @@ filter:brightness(.82) sepia(1) saturate(3.2) hue-rotate(-6deg);opacity:.85;z-in
 #view .rel button{margin:0;display:flex;flex-direction:column;align-items:center;padding:8px 6px}
 #view .rel button small{color:#e6dcff;font-size:11px}
 .mon .star{position:absolute;left:2px;top:20px;color:var(--gold);font-size:11px;letter-spacing:-1px;text-shadow:0 1px 0 #000,0 0 2px #000}
+#view .egg-i .cnt{position:absolute;left:50%;bottom:-6px;transform:translateX(-50%);background:var(--ink);color:var(--gold);font:900 11px/1 var(--title);padding:3px 6px;border-radius:8px;white-space:nowrap}
