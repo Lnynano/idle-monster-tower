@@ -77,7 +77,7 @@ function sanitize(o) {
   s.eggs = (Array.isArray(o.eggs) ? o.eggs : []).filter(e => e && ELS[e.el] && EGG[e.tier]).map(e => { maxId = Math.max(maxId, e.id | 0); return { id: e.id | 0, el: e.el, tier: e.tier }; });
   s.mons = (Array.isArray(o.mons) ? o.mons : []).filter(m => m && ELS[m.el] && TRAITS[m.trait] && m.rar >= 0 && m.rar <= 3 && [m.bh, m.ba, m.sp].every(Number.isFinite)).map(m => {
     maxId = Math.max(maxId, m.id | 0);
-    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp };
+    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp, lock: !!m.lock };
   });
   const ids = new Set(s.mons.map(m => m.id));
   s.team = (Array.isArray(o.team) ? o.team : []).filter((id, i, a) => ids.has(id) && a.indexOf(id) === i).slice(0, 3);
@@ -96,24 +96,53 @@ const teamMons = () => S.team.map(monById).filter(Boolean);
 const goldMul = () => 1 + 0.12 * teamMons().filter(m => m.trait === 'gold').length;
 const shardCoin = () => 1 + 0.05 * S.shards;
 const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.02 * S.mons.length) * (1 + 0.05 * (S.best - 1)) * goldMul() * shardCoin();
-const genCost = () => Math.floor(25 * Math.pow(1.2, S.gen));
-const lvCost = m => Math.floor(60 * Math.pow(1.2, m.lvl - 1) * RMUL[m.rar]);
+const genCostAt = g => Math.floor(25 * Math.pow(1.2, g));
+const lvCostAt = (m, l) => Math.floor(60 * Math.pow(1.2, l - 1) * RMUL[m.rar]);
+const genCost = () => genCostAt(S.gen);
+const lvCost = m => lvCostAt(m, m.lvl);
+// buy quantity (x1 / x10 / max), per device
+let qty = 1;
+try { const q = localStorage.getItem('imt_qty'); qty = q === 'max' ? 'max' : q === '10' ? 10 : 1; } catch (e) { }
+// how many steps the current qty buys from `from` (capped), and their total cost; never 0 so the button shows a price
+function bulk(costAt, from, cap = Infinity) {
+  const n = qty === 'max' ? Infinity : qty; let k = 0, c = 0;
+  while (k < n && from + k < cap) { const x = costAt(from + k); if (qty === 'max' && c + x > S.coins && k) break; c += x; k++; if (qty === 'max' && c > S.coins) break; }
+  return { k, c };
+}
+const qtyChips = () => `<div class="chips qty">${[1, 10, 'max'].map(q => `<button class="${qty === q ? 'on' : ''}" data-act="qty" data-k="${q}">${q === 'max' ? 'Max' : '×' + q}</button>`).join('')}</div>`;
+const vib = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { } };
 const reward = f => Math.floor(15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin());
 const shardGain = () => S.best < ASCEND_AT ? 0 : Math.floor(Math.pow(S.best - 20, 1.3) / 4);
-function stats(m) { const k = Math.pow(1.045, m.lvl - 1) * (1 + 0.01 * S.shards); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
+const stats = m => statsAt(m, m.lvl);
+function statsAt(m, lvl) { const k = Math.pow(1.045, lvl - 1) * (1 + 0.01 * S.shards); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
 
 function tick() {
   const now = Date.now(); let dt = now - last; last = now;
   if (dt < 0) dt = 0;
   dt = Math.min(dt, OFFLINE_CAP);
   const gain = rate() * dt / 1000; S.coins += gain;
-  if (dt > 60000) toast(`Welcome back! Away ${Math.round(dt / 60000)} min: +🪙${fmt(gain)}`);
+  if (dt > 300000) {
+    const h = Math.floor(dt / 3600e3), mi = Math.round(dt % 3600e3 / 60000);
+    modal(`<h3>Welcome back!</h3><div class="reveal"><div class="eggb">⛏️</div></div>
+      <p style="text-align:center">Away ${h ? h + 'h ' : ''}${mi}m${dt >= OFFLINE_CAP ? ' (8h max)' : ''}. Your mine earned:</p>
+      <div class="big-num" style="text-align:center">+🪙${fmt(gain)}</div><button data-act="close">Collect</button>`);
+  } else if (dt > 60000) toast(`Welcome back! +🪙${fmt(gain)}`);
   hud();
 }
 function hud() {
   $('#coins').textContent = fmt(S.coins); $('#rate').textContent = '+' + fmtRate(rate()) + '/s';
   $('#fl').textContent = S.floor; $('#shards').textContent = S.shards;
   document.querySelectorAll('[data-cost]').forEach(b => b.disabled = S.coins < +b.dataset.cost);
+  const dot = (t, on) => { const b = $(`#tabs [data-t="${t}"]`); if (b) b.classList.toggle('dot', on); };
+  dot('home', S.eggs.length > 0 || S.coins >= genCost());
+  dot('mons', canFuseAny());
+  dot('tower', !!shardGain() || (!B && !S.team.length && S.mons.length > 0));
+}
+// any two unlocked-fodder monsters of same element + rarity below Legendary
+function canFuseAny() {
+  const n = {};
+  for (const m of S.mons) if (m.rar < 3) { const k = m.el + m.rar; n[k] = (n[k] || 0) + 1; if (n[k] > 1 && S.mons.some(o => o !== m && !o.lock && o.el === m.el && o.rar === m.rar)) return true; }
+  return false;
 }
 
 // ---------- monsters / eggs ----------
@@ -125,23 +154,27 @@ function makeMon(egg) {
     bh: 50 * RMUL[rar] * pen * v(), ba: 8 * RMUL[rar] * pen * v(), sp: 8 + r() * 8 + rar,
   };
 }
+const eggQty = tier => qty === 'max' ? Math.max(1, Math.min(50, Math.floor(S.coins / EGG[tier].cost))) : qty;
 function buyEgg(tier) {
-  const c = EGG[tier].cost; if (S.coins < c) return;
+  const n = eggQty(tier), c = EGG[tier].cost * n; if (S.coins < c) return;
   S.coins -= c;
-  const el = tier === 'premium' && Math.random() < EGG.premium.dl ? (Math.random() < .5 ? 'dark' : 'light') : pick(Math.random, BASIC);
-  S.eggs.push({ id: S.nextId++, el, tier }); save(); render(); toast(`Got a ${ELS[el].i} ${tier} egg`);
+  for (let i = 0; i < n; i++) {
+    const el = tier === 'premium' && Math.random() < EGG.premium.dl ? (Math.random() < .5 ? 'dark' : 'light') : pick(Math.random, BASIC);
+    S.eggs.push({ id: S.nextId++, el, tier });
+  }
+  save(); render(); toast(n > 1 ? `Got ${n} ${tier} eggs` : `Got a ${ELS[S.eggs[S.eggs.length - 1].el].i} ${tier} egg`);
 }
-function card(m, attrs = '', big = false) {
+function card(m, attrs = '', big = false, extra = '') {
   const s = stats(m);
   return `<div class="mon r${m.rar} el-${m.el}${big ? ' big' : ''}" ${attrs}><div class="rib">${RARS[m.rar]}</div>
-    <div class="art"><span class="ic">${m.icon}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span></div>
+    <div class="art"><span class="ic">${m.icon}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${extra}</div>
     <b class="nm">${esc(m.name)}</b><div class="st"><span>❤${fmt(s.hp)}</span><span>⚔${fmt(s.atk)}</span><span>⚡${s.spd}</span></div><div class="tr">${TRAITS[m.trait].n}</div></div>`;
 }
 function hatch(id) {
   const i = S.eggs.findIndex(e => e.id === id); if (i < 0) return;
   const m = makeMon(S.eggs.splice(i, 1)[0]); S.mons.push(m); S.hatched++; save();
   modal(`<div class="hatch"><div class="egg">🥚</div><p>Hatching…</p></div>`, true);
-  setTimeout(() => { modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
+  setTimeout(() => { vib(m.rar >= 2 ? [40, 60, 40, 60, 80] : 30); modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
 }
 const reveal = m => `<div class="reveal r${m.rar}"><div class="rays"></div>${card(m, '', true)}</div>`;
 function hatchAll() {
@@ -156,8 +189,8 @@ const fuseOk = (a, b) => a && b && a !== b && a.el === b.el && a.rar === b.rar &
 const fuseChance = (a, b) => Math.min(.95, FUSE[a.rar].p + (a.lvl + b.lvl - 2) * .005);
 function fuseMenu(id) {
   const a = monById(id); if (!a || a.rar >= 3) return;
-  const l = S.mons.filter(b => fuseOk(a, b)).sort((x, y) => y.lvl - x.lvl);
-  modal(`<h3>Fuse ${esc(a.name)} → ${RARS[a.rar + 1]}</h3><p>Pick a ${ELS[a.el].i} ${RARS[a.rar]} to sacrifice. It is lost even if fusion fails.</p>
+  const l = S.mons.filter(b => fuseOk(a, b) && !b.lock).sort((x, y) => y.lvl - x.lvl);
+  modal(`<h3>Fuse ${esc(a.name)} → ${RARS[a.rar + 1]}</h3><p>Pick a ${ELS[a.el].i} ${RARS[a.rar]} to sacrifice. It is lost even if fusion fails. 🔒 locked monsters are hidden.</p>
     ${l.length ? `<div class="grid">${l.map(b => card(b, `data-act="fuseask" data-a="${a.id}" data-b="${b.id}"`)).join('')}</div>` : '<p>No matching monster.</p>'}
     <button class="btn alt" data-act="mon" data-id="${a.id}">Back</button>`);
 }
@@ -170,7 +203,7 @@ function fuseAsk(aId, bId) {
     <button class="btn alt" data-act="fusemenu" data-id="${a.id}">Back</button>`);
 }
 function fuse(aId, bId) {
-  const a = monById(aId), b = monById(bId); if (!fuseOk(a, b)) return;
+  const a = monById(aId), b = monById(bId); if (!fuseOk(a, b) || b.lock) return;
   const c = FUSE[a.rar].c; if (S.coins < c) return;
   S.coins -= c;
   const ok = Math.random() < fuseChance(a, b);
@@ -226,7 +259,7 @@ function fight() {
   const U = [...enemies(S.floor), ...P], init = U.map(u => u.hp), f = S.floor;
   const res = simulate(U), rw = res.win ? reward(f) : 0;
   if (res.win) { S.coins += rw; S.floor++; S.best = Math.max(S.best, S.floor); }
-  save();
+  S.changed = Date.now(); save();
   B = { U, init, ev: res.ev, idx: 0, win: res.win, rw, f, cur: init, log: [], done: false, t: 0 };
   render(); B.t = setInterval(step, 450 / speed);
 }
@@ -272,7 +305,23 @@ function step() {
   apply(B.ev[B.idx++], true);
 }
 function skip() { if (!B || B.done) return; clearInterval(B.t); while (B.idx < B.ev.length) apply(B.ev[B.idx++], false); finishBattle(); }
-function finishBattle() { clearInterval(B.t); B.done = true; if (cur === 'tower') render(); }
+function finishBattle() {
+  clearInterval(B.t); B.done = true; if (cur === 'tower') render();
+  if (B.win) vib(30);
+  if (!climb) return;
+  if (!B.win) { toast(`Auto-climb stopped at floor ${B.f}`); return; }
+  const b = B;
+  // keep climbing only while the player is watching the tower with nothing open
+  setTimeout(() => { if (climb && B === b && cur === 'tower' && $('#modal').hidden) { B = null; fight(); } }, 1200 / speed);
+}
+// auto-climb: start the next floor after each win, stop on a loss; per device
+let climb = false;
+try { climb = localStorage.getItem('imt_climb') === '1'; } catch (e) { }
+function toggleClimb() {
+  climb = !climb; try { localStorage.setItem('imt_climb', climb ? '1' : ''); } catch (e) { }
+  toast(climb ? 'Auto-climb ON: keeps fighting until a loss' : 'Auto-climb OFF');
+  if (climb && B && B.done && B.win && cur === 'tower') { B = null; fight(); } else render();
+}
 
 function arenaUnit(u, i) {
   return `<div class="unit ${u.side} el-${u.el}${B.cur[i] <= 0 ? ' dead' : ''}" id="u${i}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${esc(u.name)}</div><div class="bar"><i style="width:${Math.max(0, B.cur[i] / u.maxhp * 100)}%"></i></div><small class="hp">${Math.max(0, B.cur[i])}/${u.maxhp}</small></div>`;
@@ -287,7 +336,7 @@ function vArena() {
   <div class="vs">VS</div>
   <div class="row">${B.U.slice(3).map((u, i) => arenaUnit(u, i + 3)).join('')}</div>${res}</div>
   <div class="log" id="log">${B.log.map(l => `<div>${l}</div>`).join('')}</div>
-  ${B.done ? '' : `<div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button data-act="skip">Skip ⏩</button></div>`}`;
+  <div class="ctl"><button class="btn alt" id="spd" data-act="speed">${speed}×</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button>${B.done ? '' : '<button data-act="skip">Skip ⏩</button>'}</div>`;
 }
 
 // ---------- views ----------
@@ -295,10 +344,10 @@ function vHome() {
   const eg = S.eggs.map(e => `<button class="egg-i ${e.tier}" data-act="hatch" data-id="${e.id}">🥚<span class="eb">${ELS[e.el].i}</span></button>`).join('');
   return `<section class="card"><h3>⛏️ Coin Mine · Lv ${S.gen}</h3>
     <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +2% per monster owned</p></div>
-    <div class="ctl"><button data-act="gen" data-cost="${genCost()}">Upgrade · 🪙${fmt(genCost())}</button></div></section>
+    ${qtyChips()}<div class="ctl">${(() => { const g = bulk(genCostAt, S.gen); return `<button data-act="gen" data-cost="${g.c}">Upgrade${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`; })()}</div></section>
   <section class="card"><h3>🥚 Hatchery</h3><div class="shop">
-    <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost}">🪙 ${EGG.basic.cost}</button></div>
-    <div class="prem"><div class="eggb">🪺</div><b>Premium Egg</b><small>Better rarity · 3% 🌑/✨</small><button data-act="buy" data-tier="premium" data-cost="${EGG.premium.cost}">🪙 ${fmt(EGG.premium.cost)}</button></div>
+    <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost * eggQty('basic')}">${eggQty('basic') > 1 ? '×' + eggQty('basic') + ' · ' : ''}🪙 ${fmt(EGG.basic.cost * eggQty('basic'))}</button></div>
+    <div class="prem"><div class="eggb">🪺</div><b>Premium Egg</b><small>Better rarity · 3% 🌑/✨</small><button data-act="buy" data-tier="premium" data-cost="${EGG.premium.cost * eggQty('premium')}">${eggQty('premium') > 1 ? '×' + eggQty('premium') + ' · ' : ''}🪙 ${fmt(EGG.premium.cost * eggQty('premium'))}</button></div>
   </div></section>
   <section class="card"><h3>🪹 Nest (${S.eggs.length})</h3><p style="text-align:center">Tap an egg to hatch. Element shown, rarity is a surprise.</p>
     <div class="eggs">${eg || '<p>Empty nest. Buy an egg above.</p>'}</div>
@@ -318,13 +367,15 @@ let monEl = 'all', monSort = 'rar';
 function vTower() {
   if (B) return vArena();
   const E = enemies(S.floor), boss = S.floor % 10 === 0;
-  const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`) : `<div class="mon empty" data-act="slot" data-i="${i}">＋<small>Add</small></div>`; }).join('');
+  // average damage multiplier of each team member against this floor's enemies
+  const adv = m => { const v = E.reduce((t, u) => t + mult(m.el, u.el), 0) / E.length; return v > 1.05 ? '<span class="adv up">▲</span>' : v < .95 ? '<span class="adv down">▼</span>' : ''; };
+  const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`, false, adv(m)) : `<div class="mon empty" data-act="slot" data-i="${i}">＋<small>Add</small></div>`; }).join('');
   return `<div class="floorhead"><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small></div>
   <div class="arena"><div class="row">${E.map(u => `<div class="unit e el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small></div>`).join('')}</div>
   <div class="vs">VS</div><div class="row">${slots}</div></div>
   <button class="fightbtn" data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ FIGHT!</button>
-  <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick best team</button></div>
-  <p class="legend">🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>
+  <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick team</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button></div>
+  <p class="legend">▲ strong / ▼ weak vs this floor · 🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>
   <section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
     <p>Each 💎: +1% monster stats, +5% coins. Ascending resets coins, generator, floor and levels. Monsters, rarity and eggs stay.</p>
     ${shardGain() ? `<button data-act="ascend">Ascend for 💎${shardGain()}</button>` : `<p>Unlocks at floor ${ASCEND_AT}.${S.top > 1 ? ` All-time best: ${S.top}.` : ''}</p>`}</section>`;
@@ -348,15 +399,17 @@ function render() {
 // ---------- ui ----------
 let toastT;
 function toast(t) { const el = $('#toast'); el.textContent = t; el.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => el.hidden = true, 2600); }
-function modal(html, lock) { const m = $('#modal'); m.innerHTML = `<div class="modal">${html}</div>`; m.hidden = false; m.dataset.lock = lock ? '1' : ''; hud(); }
+function modal(html, lock, mon) { const m = $('#modal'); m.innerHTML = `<div class="modal">${html}</div>`; m.hidden = false; m.dataset.lock = lock ? '1' : ''; m.dataset.mon = mon || ''; hud(); }
 function closeModal() { $('#modal').hidden = true; }
 function detail(id) {
   const m = monById(id); if (!m) return;
-  const maxed = m.lvl >= MAX_LVL;
-  modal(`${card(m, '', true)}<p>${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p>
-    ${maxed ? '<p>Max level</p>' : `<button data-act="lvl" data-id="${m.id}" data-cost="${lvCost(m)}">Level up · 🪙${fmt(lvCost(m))}</button>`}
+  const maxed = m.lvl >= MAX_LVL, g = bulk(l => lvCostAt(m, l), m.lvl, MAX_LVL), now = stats(m), nx = statsAt(m, m.lvl + g.k);
+  modal(`${card(m, '', true)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p>
+    ${maxed ? '<p style="text-align:center">Max level</p>' : `${qtyChips()}<p style="text-align:center">Lv${m.lvl} → <b>Lv${m.lvl + g.k}</b>: ❤${fmt(now.hp)} → <b>${fmt(nx.hp)}</b> · ⚔${fmt(now.atk)} → <b>${fmt(nx.atk)}</b></p>
+    <button data-act="lvl" data-id="${m.id}" data-cost="${g.c}">Level up${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`}
+    <button class="btn alt" data-act="lock" data-id="${m.id}">${m.lock ? '🔓 Unlock' : '🔒 Lock (protect from fusion)'}</button>
     ${m.rar < 3 ? `<button data-act="fusemenu" data-id="${m.id}">Fuse → ${RARS[m.rar + 1]}</button>` : ''}
-    <button class="btn alt" data-act="close">Close</button>`);
+    <button class="btn alt" data-act="close">Close</button>`, false, m.id);
 }
 function picker(i) {
   const l = S.mons.filter(m => !S.team.includes(m.id)).sort((a, b) => b.rar - a.rar || b.lvl - a.lvl);
@@ -371,14 +424,17 @@ function autoPick() {
 const ACT = {
   tab: d => { if (d.t === 'tower' || cur !== d.t) { cur = d.t; render(); } },
   buy: d => buyEgg(d.tier),
-  gen: () => { const c = genCost(); if (S.coins < c) return; S.coins -= c; S.gen++; save(); render(); },
+  gen: () => { const g = bulk(genCostAt, S.gen); if (S.coins < g.c) return; S.coins -= g.c; S.gen += g.k; save(); render(); },
+  qty: d => { qty = d.k === 'max' ? 'max' : +d.k; try { localStorage.setItem('imt_qty', qty); } catch (e) { } const m = $('#modal'); if (!m.hidden && m.dataset.mon) detail(+m.dataset.mon); render(); },
+  climb: toggleClimb,
+  lock: d => { const m = monById(+d.id); if (!m) return; m.lock = !m.lock; save(); detail(m.id); render(); },
   hatch: d => hatch(+d.id),
   hatchall: hatchAll,
   mon: d => detail(+d.id),
   fusemenu: d => fuseMenu(+d.id),
   fuseask: d => fuseAsk(+d.a, +d.b),
   fuse: d => fuse(+d.a, +d.b),
-  lvl: d => { const m = monById(+d.id); if (!m || m.lvl >= MAX_LVL) return; const c = lvCost(m); if (S.coins < c) return; S.coins -= c; m.lvl++; save(); detail(m.id); render(); },
+  lvl: d => { const m = monById(+d.id); if (!m || m.lvl >= MAX_LVL) return; const g = bulk(l => lvCostAt(m, l), m.lvl, MAX_LVL); if (S.coins < g.c) return; S.coins -= g.c; m.lvl += g.k; save(); detail(m.id); render(); },
   slot: d => picker(+d.i),
   pick: d => { S.team[+d.i] = +d.id; S.team = S.team.filter(Boolean); save(); closeModal(); render(); },
   clear: d => { S.team.splice(+d.i, 1); save(); closeModal(); render(); },
@@ -407,7 +463,7 @@ const ACT = {
   },
 };
 // acts that change progress; marks the save dirty for cloud sync
-const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend']);
+const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock']);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' && !e.target.dataset.lock) return closeModal();
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
