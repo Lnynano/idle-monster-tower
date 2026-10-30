@@ -96,7 +96,7 @@ background:radial-gradient(circle at 50% 60%,color-mix(in srgb,var(--e,#999) 45%
 .mon .elb{position:absolute;left:2px;top:0;font-size:15px}
 .mon .lv{position:absolute;right:2px;bottom:0;background:var(--ink);color:var(--gold);font:900 10px/1 var(--title);padding:3px 5px;border-radius:6px}
 .mon .nm{font:900 13px/1.2 var(--title);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--ink)}
-.mon .st{display:flex;justify-content:center;gap:4px;font-size:10.5px;white-space:nowrap;font-weight:800;color:var(--ink2)}
+.mon .st{display:flex;justify-content:center;gap:3px;font-size:10px;white-space:nowrap;overflow:hidden;font-weight:800;color:var(--ink2)}
 .mon .tr{font-size:11px;font-weight:800;color:#8a4b00;background:#0000000f;border-radius:6px;padding:1px 4px}
 .el-fire{--e:var(--fire)}.el-grass{--e:var(--grass)}.el-water{--e:var(--water)}.el-dark{--e:var(--dark)}.el-light{--e:var(--light)}
 .mon.big{cursor:default;padding:22px 12px 12px;margin:14px auto 8px;max-width:240px}
@@ -113,7 +113,7 @@ background:radial-gradient(circle at 50% 60%,color-mix(in srgb,var(--e,#999) 45%
 .arena{position:relative;border-radius:16px;padding:14px 10px;margin-bottom:12px;border:3px solid var(--stoned);
 background:repeating-linear-gradient(0deg,#0000 0 27px,#0003 27px 30px),repeating-linear-gradient(90deg,#0000 0 44px,#0002 44px 47px),linear-gradient(var(--stone2),#3a3f5c);
 box-shadow:inset 0 0 30px #000a,0 5px 0 var(--stoned)}
-.row{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.row{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
 .vs{text-align:center;font:900 26px/1 var(--title);color:var(--gold);text-shadow:0 2px 0 var(--goldd),0 0 0 #000;margin:10px 0;letter-spacing:2px}
 .vs::before,.vs::after{content:"";display:inline-block;width:28%;height:3px;background:linear-gradient(90deg,#0000,var(--gold2));vertical-align:middle;margin:0 10px}
 .vs::after{background:linear-gradient(90deg,var(--gold2),#0000)}
@@ -160,7 +160,7 @@ textarea{height:84px;font:11px monospace}
 .modal{background:linear-gradient(var(--wood),var(--wood2));border:3px solid var(--woodd);border-radius:18px;padding:16px;width:100%;max-width:420px;max-height:86vh;overflow-y:auto;
 box-shadow:inset 0 0 0 2px var(--gold2),0 10px 30px #000c;animation:popin .2s ease-out}
 .modal>h3{text-align:center;color:var(--gold);font-size:20px;text-shadow:0 2px 0 var(--woodd)}
-.modal .grid{grid-template-columns:repeat(3,1fr);margin-top:14px}
+.modal .grid{grid-template-columns:repeat(3,minmax(0,1fr));margin-top:14px}
 .modal>button{display:block;width:100%}
 .modal .card{margin:8px 0}
 .hatch{text-align:center;padding:30px 0}
@@ -195,3 +195,15 @@ padding:9px 18px;border-radius:20px;z-index:20;max-width:90%;text-align:center;b
 .mon .adv{position:absolute;right:3px;top:1px;font:900 15px/1 var(--title)}
 .adv.up{color:#14892c}.adv.down{color:#c4161c}
 #view .btn.alt.on{background:linear-gradient(#8ff09c,var(--ok) 40%,#2a9a45);color:#06310f;border-color:#1d5e2c;box-shadow:0 4px 0 #1d5e2c}
+/* ---------- goals, odds, achievements, bestiary ---------- */
+.odds{display:inline-block;margin-top:6px;padding:4px 12px;border-radius:14px;font:900 13px/1.2 var(--title);border:2px solid #0006;box-shadow:0 3px 0 #0006}
+.odds.good{background:var(--ok);color:#06310f}.odds.mid{background:var(--gold);color:var(--ink)}.odds.bad{background:var(--bad);color:#fff}
+.card.goal{box-shadow:inset 0 0 0 2px var(--gold),inset 0 3px 0 4px #ffffff14,0 5px 0 var(--woodd),0 8px 14px #0007}
+.ach{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 2px;border-bottom:1px dashed #ffffff22}
+.ach span{display:flex;flex-direction:column;font-weight:800;color:var(--cream)}
+.ach small{font-weight:700}
+.ach.done{opacity:.6}
+#view .ach button{margin:0;padding:6px 12px}
+.bestiary{display:grid;grid-template-columns:repeat(5,1fr);gap:6px;margin-top:4px}
+.bestiary span{display:grid;place-items:center;height:44px;font-size:26px;border-radius:10px;background:linear-gradient(var(--parch),var(--parch2));border:2px solid var(--e,var(--woodd))}
+.bestiary .unseen{background:#0004;border-color:#ffffff22;font-size:18px;opacity:.7}

@@ -57,13 +57,14 @@ function genName(r, el) { const s = pick(r, SYL[el]) + pick(r, SUF); return s[0]
 
 function mult(a, d) {
   const ad = a === 'dark' || a === 'light', dd = d === 'dark' || d === 'light';
-  if (ad) return dd ? (a === d ? 1 : 2) : 1.5;
+  if (ad) return dd ? (a === d ? 1 : 2.5) : 1.75;
   if (dd) return 1;
-  return ADV[a] === d ? 1.5 : ADV[d] === a ? 0.75 : 1;
+  return ADV[a] === d ? 2 : ADV[d] === a ? 0.6 : 1;
 }
 
 // ---------- state ----------
-const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null, shards: 0, ascends: 0, top: 1 });
+const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null, shards: 0, ascends: 0, top: 1,
+  seen: [], quest: 0, ach: [], fusions: 0, fed: 0, sweepAt: 0, daily: '', streak: 0 });
 let S, last, cur = 'home', B = null;
 
 function sanitize(o) {
@@ -77,7 +78,7 @@ function sanitize(o) {
   s.eggs = (Array.isArray(o.eggs) ? o.eggs : []).filter(e => e && ELS[e.el] && EGG[e.tier]).map(e => { maxId = Math.max(maxId, e.id | 0); return { id: e.id | 0, el: e.el, tier: e.tier }; });
   s.mons = (Array.isArray(o.mons) ? o.mons : []).filter(m => m && ELS[m.el] && TRAITS[m.trait] && m.rar >= 0 && m.rar <= 3 && [m.bh, m.ba, m.sp].every(Number.isFinite)).map(m => {
     maxId = Math.max(maxId, m.id | 0);
-    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp, lock: !!m.lock };
+    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp, lock: !!m.lock, xp: Math.max(0, Number(m.xp) || 0) };
   });
   const ids = new Set(s.mons.map(m => m.id));
   s.team = (Array.isArray(o.team) ? o.team : []).filter((id, i, a) => ids.has(id) && a.indexOf(id) === i).slice(0, 3);
@@ -85,6 +86,11 @@ function sanitize(o) {
   // changed: last real progress (client clock); cloud: last sync point
   s.changed = n(o.changed, 0);
   s.cloud = o.cloud && typeof o.cloud.at === 'string' ? { at: o.cloud.at.slice(0, 40), local: n(o.cloud.local, 0) } : null;
+  const strs = (a, ok) => [...new Set((Array.isArray(a) ? a : []).filter(x => typeof x === 'string' && ok(x)))];
+  s.seen = strs(o.seen, x => SPECIES.includes(x)); s.mons.forEach(m => { const k = m.el + ':' + m.icon; if (SPECIES.includes(k) && !s.seen.includes(k)) s.seen.push(k); });
+  s.ach = strs(o.ach, x => ACH.some(a => a.id === x));
+  s.quest = Math.min(QUESTS.length, Math.floor(n(o.quest, 0))); s.fusions = Math.floor(n(o.fusions, 0)); s.fed = Math.floor(n(o.fed, 0));
+  s.sweepAt = n(o.sweepAt, 0); s.daily = typeof o.daily === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.daily) ? o.daily : ''; s.streak = Math.floor(n(o.streak, 0));
   return s;
 }
 function load() { try { const r = localStorage.getItem(SAVE_KEY); if (r) return sanitize(JSON.parse(r)); } catch (e) { } return fresh(); }
@@ -95,7 +101,7 @@ const monById = id => S.mons.find(m => m.id === id);
 const teamMons = () => S.team.map(monById).filter(Boolean);
 const goldMul = () => 1 + 0.12 * teamMons().filter(m => m.trait === 'gold').length;
 const shardCoin = () => 1 + 0.05 * S.shards;
-const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.02 * S.mons.length) * (1 + 0.05 * (S.best - 1)) * goldMul() * shardCoin();
+const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.05 * S.seen.length) * (1 + 0.05 * (S.best - 1)) * goldMul() * shardCoin();
 const genCostAt = g => Math.floor(25 * Math.pow(1.2, g));
 const lvCostAt = (m, l) => Math.floor(60 * Math.pow(1.2, l - 1) * RMUL[m.rar]);
 const genCost = () => genCostAt(S.gen);
@@ -110,8 +116,9 @@ function bulk(costAt, from, cap = Infinity) {
   return { k, c };
 }
 const qtyChips = () => `<div class="chips qty">${[1, 10, 'max'].map(q => `<button class="${qty === q ? 'on' : ''}" data-act="qty" data-k="${q}">${q === 'max' ? 'Max' : '×' + q}</button>`).join('')}</div>`;
-const vib = p => { try { navigator.vibrate && navigator.vibrate(p); } catch (e) { } };
-const reward = f => Math.floor(15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin());
+const vib = p => { try { if (navigator.vibrate && (!navigator.userActivation || navigator.userActivation.hasBeenActive)) navigator.vibrate(p); } catch (e) { } };
+// a win pays ~45s of mine income on top of the floor's base; boss floors triple it
+const reward = f => Math.floor((15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin() + rate() * 45) * (f % 10 === 0 ? 3 : 1));
 const shardGain = () => S.best < ASCEND_AT ? 0 : Math.floor(Math.pow(S.best - 20, 1.3) / 4);
 const stats = m => statsAt(m, m.lvl);
 function statsAt(m, lvl) { const k = Math.pow(1.045, lvl - 1) * (1 + 0.01 * S.shards); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
@@ -134,9 +141,10 @@ function hud() {
   $('#fl').textContent = S.floor; $('#shards').textContent = S.shards;
   document.querySelectorAll('[data-cost]').forEach(b => b.disabled = S.coins < +b.dataset.cost);
   const dot = (t, on) => { const b = $(`#tabs [data-t="${t}"]`); if (b) b.classList.toggle('dot', on); };
-  dot('home', S.eggs.length > 0 || S.coins >= genCost());
+  const goal = QUESTS[S.quest] && QUESTS[S.quest].done();
+  dot('home', S.eggs.length > 0 || S.coins >= genCost() || goal || dailyReady() || ACH.some(achReady));
   dot('mons', canFuseAny());
-  dot('tower', !!shardGain() || (!B && !S.team.length && S.mons.length > 0));
+  dot('tower', !!shardGain() || goal || (S.best > 1 && Date.now() >= S.sweepAt) || (!B && !S.team.length && S.mons.length > 0));
 }
 // any two unlocked-fodder monsters of same element + rarity below Legendary
 function canFuseAny() {
@@ -146,11 +154,21 @@ function canFuseAny() {
 }
 
 // ---------- monsters / eggs ----------
+// new monsters arrive at 80% of the team's average level so fresh pulls are usable right away
+function hatchLvl() { const t = teamMons(); return t.length ? Math.max(1, Math.floor(t.reduce((a, m) => a + m.lvl, 0) / t.length * .8)) : 1; }
+// add a hatched monster: fill empty team slots, record new species (+💎1 each)
+function addMon(m) {
+  S.mons.push(m); S.hatched++;
+  if (S.team.length < 3) S.team.push(m.id);
+  const k = m.el + ':' + m.icon;
+  if (!S.seen.includes(k)) { S.seen.push(k); S.shards++; return true; }
+  return false;
+}
 function makeMon(egg) {
   const r = Math.random, rar = weighted(r, EGG[egg.tier].rar), el = egg.el, dl = el === 'dark' || el === 'light';
   const pen = dl ? 0.75 : 1, v = () => 0.9 + r() * 0.2;
   return {
-    id: S.nextId++, name: genName(r, el), icon: pick(r, ICONS[el]), el, rar, trait: pick(r, TRAIT_KEYS), lvl: 1,
+    id: S.nextId++, name: genName(r, el), icon: pick(r, ICONS[el]), el, rar, trait: pick(r, TRAIT_KEYS), lvl: hatchLvl(),
     bh: 50 * RMUL[rar] * pen * v(), ba: 8 * RMUL[rar] * pen * v(), sp: 8 + r() * 8 + rar,
   };
 }
@@ -172,15 +190,20 @@ function card(m, attrs = '', big = false, extra = '') {
 }
 function hatch(id) {
   const i = S.eggs.findIndex(e => e.id === id); if (i < 0) return;
-  const m = makeMon(S.eggs.splice(i, 1)[0]); S.mons.push(m); S.hatched++; save();
+  const m = makeMon(S.eggs.splice(i, 1)[0]), isNew = addMon(m); save();
   modal(`<div class="hatch"><div class="egg">🥚</div><p>Hatching…</p></div>`, true);
-  setTimeout(() => { vib(m.rar >= 2 ? [40, 60, 40, 60, 80] : 30); modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
+  setTimeout(() => { vib(m.rar >= 2 ? [40, 60, 40, 60, 80] : 30); modal(`<h3>${m.rar === 3 ? 'LEGENDARY!' : m.rar === 2 ? 'Epic hatch!' : 'It hatched!'}</h3>${reveal(m)}<p style="text-align:center">${isNew ? '<b>New species! +💎1</b><br>' : ''}${TRAITS[m.trait].n}: ${TRAITS[m.trait].d}</p><button data-act="close">Nice!</button>`); render(); }, 900);
 }
 const reveal = m => `<div class="reveal r${m.rar}"><div class="rays"></div>${card(m, '', true)}</div>`;
 function hatchAll() {
   if (!S.eggs.length) return;
-  const got = S.eggs.map(e => makeMon(e)); S.eggs = []; S.mons.push(...got); S.hatched += got.length; save(); render();
-  modal(`<h3>Hatched ${got.length}</h3><div class="grid">${got.map(m => card(m)).join('')}</div><button data-act="close">Nice</button>`);
+  const got = S.eggs.map(e => makeMon(e)); S.eggs = [];
+  const nNew = got.filter(addMon).length; save(); render();
+  // only Rare+ get cards; the best one gets the full reveal
+  const good = got.filter(m => m.rar >= 1).sort((a, b) => b.rar - a.rar), best = good[0], cnt = [0, 1, 2, 3].map(r => got.filter(m => m.rar === r).length);
+  vib(best && best.rar >= 2 ? [40, 60, 40, 60, 80] : 30);
+  modal(`<h3>Hatched ${got.length}</h3><p style="text-align:center">${cnt.map((c, r) => c ? `${c} ${RARS[r]}` : '').filter(Boolean).join(' · ')}${nNew ? `<br><b>${nNew} new species! +💎${nNew}</b>` : ''}</p>
+    ${best ? reveal(best) : ''}${good.length > 1 ? `<div class="grid">${good.slice(1).map(m => card(m)).join('')}</div>` : ''}<button data-act="close">Nice!</button>`);
 }
 
 // ---------- fusion ----------
@@ -209,9 +232,114 @@ function fuse(aId, bId) {
   const ok = Math.random() < fuseChance(a, b);
   S.mons = S.mons.filter(m => m !== b); S.team = S.team.filter(id => id !== b.id);
   if (ok) { const k = RMUL[a.rar + 1] / RMUL[a.rar]; a.rar++; a.bh *= k; a.ba *= k; a.sp += 1; a.lvl = Math.max(a.lvl, b.lvl); }
+  S.fusions++;
   save(); render();
   modal(`<div class="hatch"><div class="egg">🌀</div><p>Fusing…</p></div>`, true);
   setTimeout(() => modal(`<h3>${ok ? 'Fusion succeeded!' : 'Fusion failed'}</h3>${ok ? reveal(a) : card(a, '', true)}<p>${ok ? `${esc(a.name)} is now ${RARS[a.rar]}.` : `${esc(b.name)} was lost.`}</p><button data-act="close">OK</button>`), 1000);
+}
+
+// ---------- feed ----------
+// sacrifice spare monsters for XP: worth about what they cost to get (egg price by rarity, more if levelled),
+// spent on the same curve as coin level-ups; leftover XP stays on the monster
+const feedXP = b => Math.floor(EGG.basic.cost * [1, 3, 10, 30][b.rar] * (1 + (b.lvl - 1) * .1));
+function levelsFrom(a, xp) { let l = a.lvl, x = (a.xp || 0) + xp; while (l < MAX_LVL && x >= lvCostAt(a, l)) { x -= lvCostAt(a, l); l++; } return { l, x }; }
+const spare = a => S.mons.filter(b => b !== a && !b.lock && !S.team.includes(b.id));
+function feedMenu(id) {
+  const a = monById(id); if (!a) return;
+  const l = spare(a).sort((x, y) => x.rar - y.rar || x.lvl - y.lvl), commons = l.filter(b => b.rar === 0);
+  const all = levelsFrom(a, commons.reduce((t, b) => t + feedXP(b), 0)).l - a.lvl;
+  const need = lvCostAt(a, a.lvl) - (a.xp || 0);
+  modal(`<h3>Feed ${esc(a.name)}</h3><p style="text-align:center">Lv${a.lvl} · ${fmt(need)} XP to next level. Sacrifice spare monsters for XP. Team and 🔒 locked monsters are hidden.</p>
+    ${commons.length ? `<button data-act="feedall" data-id="${a.id}">Feed all ${commons.length} spare Commons (+${all} Lv)</button>` : ''}
+    ${l.length ? `<div class="grid">${l.map(b => card(b, `data-act="feed" data-a="${a.id}" data-b="${b.id}"`, false, `<span class="adv up">${fmt(feedXP(b))}xp</span>`)).join('')}</div>` : '<p>No spare monsters.</p>'}
+    <button class="btn alt" data-act="mon" data-id="${a.id}">Back</button>`);
+}
+function feed(a, list) {
+  if (!a || !list.length || a.lvl >= MAX_LVL) return;
+  const ids = new Set(list.map(b => b.id)), before = a.lvl;
+  const r = levelsFrom(a, list.reduce((t, b) => t + feedXP(b), 0)); a.lvl = r.l; a.xp = r.l >= MAX_LVL ? 0 : r.x;
+  S.mons = S.mons.filter(b => !ids.has(b.id)); S.fed += list.length;
+  save(); render(); detail(a.id); toast(`${esc(a.name)} Lv${before} → Lv${a.lvl}`);
+}
+
+// ---------- sweep ----------
+// re-clear the highest cleared floor for its reward, every 10 minutes
+const SWEEP_CD = 10 * 60e3;
+function sweep() {
+  if (S.best <= 1) return;
+  const w = S.sweepAt - Date.now(); if (w > 0) return toast(`Sweep ready in ${Math.ceil(w / 60000)} min`);
+  const r = reward(S.best - 1); S.coins += r; S.sweepAt = Date.now() + SWEEP_CD;
+  save(); render(); toast(`Swept floor ${S.best - 1}: +🪙${fmt(r)}`);
+}
+
+// ---------- goals, achievements, daily ----------
+const QUESTS = [
+  { t: 'Buy and hatch 2 eggs', done: () => S.hatched >= 2, r: { coins: 100 } },
+  { t: 'Clear floor 3 in the Tower', done: () => S.best > 3, r: { coins: 150 } },
+  { t: 'Upgrade the Coin Mine', done: () => S.gen >= 1, r: { coins: 100 } },
+  { t: 'Level a monster to Lv5', done: () => S.mons.some(m => m.lvl >= 5), r: { coins: 300 } },
+  { t: 'Beat the floor 10 boss', done: () => S.best > 10, r: { egg: 'premium' } },
+  { t: 'Feed a monster', done: () => S.fed >= 1, r: { coins: 500 } },
+  { t: 'Fuse two monsters', done: () => S.fusions >= 1, r: { shards: 1 } },
+  { t: 'Beat the floor 20 boss', done: () => S.best > 20, r: { egg: 'premium' } },
+  { t: 'Reach floor 25, then Ascend', done: () => S.ascends >= 1, r: { shards: 3 } },
+];
+const SPECIES = Object.keys(ICONS).flatMap(e => ICONS[e].map(i => e + ':' + i));
+const topFloor = () => Math.max(S.top, S.best) - 1;
+const ACH = [
+  ...[10, 25, 50, 75, 100].map((f, i) => ({ id: 'f' + f, t: `Clear floor ${f}`, v: topFloor, goal: f, r: [1, 2, 4, 6, 10][i] })),
+  ...[10, 50].map((n, i) => ({ id: 'o' + n, t: `Own ${n} monsters`, v: () => S.mons.length, goal: n, r: i + 1 })),
+  { id: 'e1', t: 'Own an Epic', v: () => S.mons.filter(m => m.rar >= 2).length, goal: 1, r: 1 },
+  { id: 'l1', t: 'Own a Legendary', v: () => S.mons.filter(m => m.rar === 3).length, goal: 1, r: 2 },
+  { id: 'l5', t: 'Own 5 Legendaries', v: () => S.mons.filter(m => m.rar === 3).length, goal: 5, r: 4 },
+  { id: 'u10', t: 'Fuse 10 times', v: () => S.fusions, goal: 10, r: 3 },
+  ...[50, 250].map((n, i) => ({ id: 'h' + n, t: `Hatch ${n} eggs`, v: () => S.hatched, goal: n, r: [2, 4][i] })),
+  { id: 's10', t: 'Discover 10 species', v: () => S.seen.length, goal: 10, r: 2 },
+  { id: 's20', t: 'Complete the Bestiary', v: () => S.seen.length, goal: SPECIES.length, r: 5 },
+];
+const achReady = a => !S.ach.includes(a.id) && a.v() >= a.goal;
+const dayStr = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const today = () => dayStr(new Date());
+const dailyReady = () => S.daily !== today();
+function giveReward(r) {
+  const out = [];
+  if (r.coins) { S.coins += r.coins; out.push('🪙' + fmt(r.coins)); }
+  if (r.shards) { S.shards += r.shards; out.push('💎' + r.shards); }
+  if (r.egg) { S.eggs.push({ id: S.nextId++, el: pick(Math.random, BASIC), tier: r.egg }); out.push(r.egg === 'premium' ? '🪺 Premium egg' : '🥚 Egg'); }
+  return out.join(' + ');
+}
+function claimGoal() {
+  const q = QUESTS[S.quest]; if (!q || !q.done()) return;
+  const got = giveReward(q.r); S.quest++; save(); render(); toast('Goal done! ' + got); vib(30);
+}
+function claimAch(id) {
+  const a = ACH.find(x => x.id === id); if (!a || !achReady(a)) return;
+  S.ach.push(a.id); S.shards += a.r; save(); render(); toast(`🏆 ${a.t}: +💎${a.r}`); vib(30);
+}
+function claimDaily() {
+  if (!dailyReady()) return;
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  S.streak = S.daily === dayStr(y) ? S.streak + 1 : 1; S.daily = today();
+  const got = giveReward({ coins: Math.floor(Math.max(200, rate() * 900)), egg: S.streak % 7 === 0 ? 'premium' : 'basic' });
+  save(); render(); toast(`🎁 Day ${S.streak}: ${got}`); vib(30);
+}
+function goalCard() {
+  const q = QUESTS[S.quest]; if (!q) return '';
+  const r = q.r.coins ? '🪙' + q.r.coins : q.r.shards ? '💎' + q.r.shards : '🪺 Premium egg';
+  return `<section class="card goal"><h3>🎯 Goal ${S.quest + 1}/${QUESTS.length}</h3><p style="text-align:center"><b>${q.t}</b><br>Reward: ${r}</p>
+    ${q.done() ? '<div class="ctl"><button data-act="goal">Claim reward</button></div>' : ''}</section>`;
+}
+function achCard() {
+  const l = [...ACH].sort((a, b) => achReady(b) - achReady(a) || S.ach.includes(a.id) - S.ach.includes(b.id));
+  return `<section class="card"><h3>🏆 Achievements ${S.ach.length}/${ACH.length}</h3>${l.map(a => {
+    const done = S.ach.includes(a.id), v = Math.min(a.v(), a.goal);
+    return `<div class="ach${done ? ' done' : ''}"><span>${done ? '✅' : '🏆'} ${a.t}<small>${done ? 'Claimed' : `${v}/${a.goal}`} · 💎${a.r}</small></span>${achReady(a) ? `<button data-act="ach" data-id="${a.id}">Claim</button>` : ''}</div>`;
+  }).join('')}</section>`;
+}
+function dailyCard() {
+  if (!dailyReady()) return '';
+  return `<section class="card"><h3>🎁 Daily chest</h3><p style="text-align:center">~15 min of mine income + an egg. Day 7 of a streak: Premium egg.${S.streak ? `<br>Streak: ${S.streak} day${S.streak > 1 ? 's' : ''}` : ''}</p>
+    <div class="ctl"><button data-act="daily">Open chest</button></div></section>`;
 }
 
 // ---------- ascend ----------
@@ -226,7 +354,7 @@ function ascend() {
 
 // ---------- battle ----------
 function enemies(f) {
-  const r = mulberry(f * 7919 + 13), boss = f % 10 === 0, k = (boss ? 1.3 : 1) * Math.min(1, .5 + f * .07), dl = Math.min(.5, Math.max(0, (f - 15) * .03));
+  const r = mulberry(f * 7919 + 13), boss = f % 10 === 0, k = (boss ? 1.3 : 1) * Math.min(1, .4 + f * .07), dl = Math.min(.5, Math.max(0, (f - 15) * .03));
   return [0, 1, 2].map(() => {
     const el = r() < dl ? (r() < .5 ? 'dark' : 'light') : pick(r, BASIC);
     const pen = el === 'dark' || el === 'light' ? 0.8 : 1;
@@ -241,7 +369,9 @@ function simulate(U) {
     for (const a of U.filter(u => u.hp > 0).sort((x, y) => key(y) - key(x))) {
       if (a.hp <= 0) continue;
       const foes = U.filter(u => u.side !== a.side && u.hp > 0); if (!foes.length) break;
-      const d = foes[Math.floor(Math.random() * foes.length)], m = mult(a.el, d.el), crit = a.trait === 'fury' && Math.random() < .25;
+      // focus fire: hit the foe you're strongest against, then the weakest one
+      const d = foes.reduce((x, y) => mult(a.el, y.el) > mult(a.el, x.el) || (mult(a.el, y.el) === mult(a.el, x.el) && y.hp < x.hp) ? y : x);
+      const m = mult(a.el, d.el), crit = a.trait === 'fury' && Math.random() < .25;
       const dmg = Math.max(1, Math.round(a.atk * m * (.9 + Math.random() * .2) * (crit ? 2 : 1)));
       d.hp = Math.max(0, d.hp - dmg);
       let heal = 0, thorn = 0;
@@ -253,14 +383,27 @@ function simulate(U) {
   }
   return { win: false, ev };
 }
+const teamUnits = tm => tm.map(m => { const s = stats(m); return { side: 'p', name: m.name, icon: m.icon, el: m.el, hp: s.hp, maxhp: s.hp, atk: s.atk, spd: s.spd, trait: m.trait }; });
+// estimated win chance from quick simulations, cached per team/floor state
+let oddsKey = '', oddsVal = 0;
+function winChance() {
+  const tm = teamMons(); if (!tm.length) return 0;
+  const k = S.floor + '|' + S.shards + '|' + tm.map(m => m.id + ':' + m.lvl + ':' + m.rar).join();
+  if (k !== oddsKey) {
+    let w = 0; const N = 60;
+    for (let i = 0; i < N; i++) if (simulate([...enemies(S.floor), ...teamUnits(tm)]).win) w++;
+    oddsKey = k; oddsVal = w / N;
+  }
+  return oddsVal;
+}
 function fight() {
   const tm = teamMons(); if (!tm.length || B) return;
-  const P = tm.map(m => { const s = stats(m); return { side: 'p', name: m.name, icon: m.icon, el: m.el, hp: s.hp, maxhp: s.hp, atk: s.atk, spd: s.spd, trait: m.trait }; });
-  const U = [...enemies(S.floor), ...P], init = U.map(u => u.hp), f = S.floor;
-  const res = simulate(U), rw = res.win ? reward(f) : 0;
+  const U = [...enemies(S.floor), ...teamUnits(tm)], init = U.map(u => u.hp), f = S.floor;
+  const res = simulate(U), rw = res.win ? reward(f) : 0, chest = res.win && f % 10 === 0;
   if (res.win) { S.coins += rw; S.floor++; S.best = Math.max(S.best, S.floor); }
+  if (chest) S.eggs.push({ id: S.nextId++, el: pick(Math.random, BASIC), tier: 'premium' });
   S.changed = Date.now(); save();
-  B = { U, init, ev: res.ev, idx: 0, win: res.win, rw, f, cur: init, log: [], done: false, t: 0 };
+  B = { U, init, ev: res.ev, idx: 0, win: res.win, rw, f, chest, cur: init, log: [], done: false, t: 0 };
   render(); B.t = setInterval(step, 450 / speed);
 }
 // battle playback speed, per device
@@ -329,7 +472,7 @@ function arenaUnit(u, i) {
 function vArena() {
   const alive = B.U.filter((u, i) => u.side === 'p' && B.cur[i] > 0).length;
   const res = B.done ? `<div class="res ${B.win ? 'win' : 'lose'}">${B.win ? `<div class="stars">${'★'.repeat(alive)}${'☆'.repeat(3 - alive)}</div>` : ''}
-    <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}` : `Floor ${B.f} holds. Level up or change your team.`}</p>
+    <h2>${B.win ? 'VICTORY!' : 'DEFEAT'}</h2><p>${B.win ? `Floor ${B.f} cleared · +🪙${fmt(B.rw)}${B.chest ? '<br>🎁 Boss chest: Premium egg!' : ''}` : `Floor ${B.f} holds. Level up, feed, or try a team with ▲ arrows.`}</p>
     <button data-act="cont">${B.win ? 'Next floor ▶' : 'Try again'}</button></div>` : '';
   return `<div class="floorhead"><h2>Floor ${B.f}</h2></div>
   <div class="arena"><div class="row">${B.U.slice(0, 3).map((u, i) => arenaUnit(u, i)).join('')}</div>
@@ -342,8 +485,8 @@ function vArena() {
 // ---------- views ----------
 function vHome() {
   const eg = S.eggs.map(e => `<button class="egg-i ${e.tier}" data-act="hatch" data-id="${e.id}">🥚<span class="eb">${ELS[e.el].i}</span></button>`).join('');
-  return `<section class="card"><h3>⛏️ Coin Mine · Lv ${S.gen}</h3>
-    <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +2% per monster owned</p></div>
+  return `${goalCard()}${dailyCard()}<section class="card"><h3>⛏️ Coin Mine · Lv ${S.gen}</h3>
+    <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +5% per species discovered</p></div>
     ${qtyChips()}<div class="ctl">${(() => { const g = bulk(genCostAt, S.gen); return `<button data-act="gen" data-cost="${g.c}">Upgrade${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`; })()}</div></section>
   <section class="card"><h3>🥚 Hatchery</h3><div class="shop">
     <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost * eggQty('basic')}">${eggQty('basic') > 1 ? '×' + eggQty('basic') + ' · ' : ''}🪙 ${fmt(EGG.basic.cost * eggQty('basic'))}</button></div>
@@ -351,7 +494,7 @@ function vHome() {
   </div></section>
   <section class="card"><h3>🪹 Nest (${S.eggs.length})</h3><p style="text-align:center">Tap an egg to hatch. Element shown, rarity is a surprise.</p>
     <div class="eggs">${eg || '<p>Empty nest. Buy an egg above.</p>'}</div>
-    ${S.eggs.length > 1 ? '<div class="ctl"><button data-act="hatchall">Hatch all</button></div>' : ''}</section>`;
+    ${S.eggs.length > 1 ? '<div class="ctl"><button data-act="hatchall">Hatch all</button></div>' : ''}</section>${achCard()}`;
 }
 function vMons() {
   if (!S.mons.length) return '<section class="card"><h3>📖 Bestiary</h3><p style="text-align:center">No monsters yet. Buy and hatch an egg in the Village.</p></section>';
@@ -359,9 +502,11 @@ function vMons() {
   const by = { rar: (a, b) => b.rar - a.rar || b.lvl - a.lvl, lvl: (a, b) => b.lvl - a.lvl || b.rar - a.rar, pow: (a, b) => pw(b) - pw(a) }[monSort];
   const l = S.mons.filter(m => monEl === 'all' || m.el === monEl).sort((a, b) => by(a, b) || a.id - b.id);
   const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
-  return `<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
+  const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${k.split(':')[1]}</span>` : '<span class="unseen">❔</span>').join('')}</div>
+    <p style="text-align:center">Each new species: +💎1</p></section>`;
+  return `${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
   <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
-  <p>${l.length} of ${S.mons.length} · tap for details, level up, fuse</p><div class="grid">${l.map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>`;
+  <p>${l.length} of ${S.mons.length} · tap for details, level up, feed, fuse</p><div class="grid">${l.map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>`;
 }
 let monEl = 'all', monSort = 'rar';
 function vTower() {
@@ -370,12 +515,15 @@ function vTower() {
   // average damage multiplier of each team member against this floor's enemies
   const adv = m => { const v = E.reduce((t, u) => t + mult(m.el, u.el), 0) / E.length; return v > 1.05 ? '<span class="adv up">▲</span>' : v < .95 ? '<span class="adv down">▼</span>' : ''; };
   const slots = [0, 1, 2].map(i => { const m = monById(S.team[i]); return m ? card(m, `data-act="slot" data-i="${i}"`, false, adv(m)) : `<div class="mon empty" data-act="slot" data-i="${i}">＋<small>Add</small></div>`; }).join('');
-  return `<div class="floorhead"><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small></div>
+  const odds = Math.round(winChance() * 100), sw = S.sweepAt - Date.now();
+  return `${goalCard()}<div class="floorhead"><h2>Floor ${S.floor}</h2>${boss ? '<span class="boss">BOSS · 🎁 chest</span>' : ''}<small>Best ${S.best} · Reward 🪙${fmt(reward(S.floor))}</small>
+    ${S.team.length ? `<div class="odds ${odds >= 70 ? 'good' : odds >= 35 ? 'mid' : 'bad'}">Win chance ~${odds}%</div>` : ''}</div>
   <div class="arena"><div class="row">${E.map(u => `<div class="unit e el-${u.el}"><div class="ic">${u.icon}</div><div class="nm">${ELS[u.el].i} ${ELS[u.el].n}</div><small>❤${fmt(u.hp)} ⚔${fmt(u.atk)}</small></div>`).join('')}</div>
   <div class="vs">VS</div><div class="row">${slots}</div></div>
   <button class="fightbtn" data-act="fight" ${S.team.length ? '' : 'disabled'}>⚔️ FIGHT!</button>
   <div class="ctl"><button class="btn alt" data-act="auto">Auto-pick team</button><button class="btn alt${climb ? ' on' : ''}" data-act="climb">🔁 Auto ${climb ? 'ON' : 'OFF'}</button></div>
-  <p class="legend">▲ strong / ▼ weak vs this floor · 🔥 > 🌿 > 💧 > 🔥 ×1.5 (weak ×0.75)<br>🌑 / ✨: ×1.5 vs basics, ×2 vs each other</p>
+  ${S.best > 1 ? `<div class="ctl"><button class="btn alt" data-act="sweep" ${sw > 0 ? 'disabled' : ''}>🧹 Sweep floor ${S.best - 1}${sw > 0 ? ` · ready in ${Math.ceil(sw / 60000)}m` : ` · +🪙${fmt(reward(S.best - 1))}`}</button></div>` : ''}
+  <p class="legend">▲ strong / ▼ weak vs this floor · 🔥 > 🌿 > 💧 > 🔥 ×2 (weak ×0.6)<br>🌑 / ✨: ×1.75 vs basics, ×2.5 vs each other</p>
   <section class="card"><h3>🌀 Ascend · 💎${S.shards}</h3>
     <p>Each 💎: +1% monster stats, +5% coins. Ascending resets coins, generator, floor and levels. Monsters, rarity and eggs stay.</p>
     ${shardGain() ? `<button data-act="ascend">Ascend for 💎${shardGain()}</button>` : `<p>Unlocks at floor ${ASCEND_AT}.${S.top > 1 ? ` All-time best: ${S.top}.` : ''}</p>`}</section>`;
@@ -408,6 +556,7 @@ function detail(id) {
     ${maxed ? '<p style="text-align:center">Max level</p>' : `${qtyChips()}<p style="text-align:center">Lv${m.lvl} → <b>Lv${m.lvl + g.k}</b>: ❤${fmt(now.hp)} → <b>${fmt(nx.hp)}</b> · ⚔${fmt(now.atk)} → <b>${fmt(nx.atk)}</b></p>
     <button data-act="lvl" data-id="${m.id}" data-cost="${g.c}">Level up${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`}
     <button class="btn alt" data-act="lock" data-id="${m.id}">${m.lock ? '🔓 Unlock' : '🔒 Lock (protect from fusion)'}</button>
+    ${m.lvl < MAX_LVL ? `<button data-act="feedmenu" data-id="${m.id}">🍖 Feed spare monsters</button>` : ''}
     ${m.rar < 3 ? `<button data-act="fusemenu" data-id="${m.id}">Fuse → ${RARS[m.rar + 1]}</button>` : ''}
     <button class="btn alt" data-act="close">Close</button>`, false, m.id);
 }
@@ -417,7 +566,9 @@ function picker(i) {
     ${S.team[i] ? `<button data-act="clear" data-i="${i}">Remove from slot</button>` : ''}<button class="btn alt" data-act="close">Cancel</button>`);
 }
 function autoPick() {
-  const pw = m => { const s = stats(m); return s.hp * s.atk; };
+  // power x (damage dealt / damage taken) against this floor's enemies
+  const E = enemies(S.floor), avg = f => E.reduce((t, u) => t + f(u), 0) / E.length;
+  const pw = m => { const s = stats(m); return s.hp * s.atk * avg(u => mult(m.el, u.el)) / avg(u => mult(u.el, m.el)); };
   S.team = [...S.mons].sort((a, b) => pw(b) - pw(a)).slice(0, 3).map(m => m.id); save(); render();
 }
 
@@ -432,6 +583,13 @@ const ACT = {
   hatchall: hatchAll,
   mon: d => detail(+d.id),
   fusemenu: d => fuseMenu(+d.id),
+  feedmenu: d => feedMenu(+d.id),
+  feed: d => { const a = monById(+d.a), b = monById(+d.b); if (!a || !b || b.lock || S.team.includes(b.id)) return; if (b.rar >= 2 && !confirm(`Feed ${RARS[b.rar]} ${b.name}? It will be gone.`)) return; feed(a, [b]); },
+  feedall: d => { const a = monById(+d.id); if (a) feed(a, spare(a).filter(b => b.rar === 0)); },
+  sweep,
+  goal: claimGoal,
+  ach: d => claimAch(d.id),
+  daily: claimDaily,
   fuseask: d => fuseAsk(+d.a, +d.b),
   fuse: d => fuse(+d.a, +d.b),
   lvl: d => { const m = monById(+d.id); if (!m || m.lvl >= MAX_LVL) return; const g = bulk(l => lvCostAt(m, l), m.lvl, MAX_LVL); if (S.coins < g.c) return; S.coins -= g.c; m.lvl += g.k; save(); detail(m.id); render(); },
@@ -463,7 +621,7 @@ const ACT = {
   },
 };
 // acts that change progress; marks the save dirty for cloud sync
-const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock']);
+const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock', 'feed', 'feedall', 'sweep', 'goal', 'ach', 'daily']);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' && !e.target.dataset.lock) return closeModal();
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
