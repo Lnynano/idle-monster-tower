@@ -64,7 +64,7 @@ function mult(a, d) {
 
 // ---------- state ----------
 const fresh = () => ({ v: 1, coins: 100, gen: 0, eggs: [], mons: [], team: [], floor: 1, best: 1, nextId: 1, saved: Date.now(), hatched: 0, changed: 0, cloud: null, shards: 0, ascends: 0, top: 1,
-  seen: [], quest: 0, ach: [], fusions: 0, fed: 0, sweepAt: 0, daily: '', streak: 0, exp: [], trialDay: '' });
+  seen: [], quest: 0, ach: [], fusions: 0, fed: 0, sweepAt: 0, daily: '', streak: 0, exp: [], trialDay: '', ess: 0, shop: { might: 0, vit: 0, greed: 0, slots: 0 } });
 let S, last, cur = 'home', B = null;
 
 function sanitize(o) {
@@ -78,7 +78,7 @@ function sanitize(o) {
   s.eggs = (Array.isArray(o.eggs) ? o.eggs : []).filter(e => e && ELS[e.el] && EGG[e.tier]).map(e => { maxId = Math.max(maxId, e.id | 0); return { id: e.id | 0, el: e.el, tier: e.tier }; });
   s.mons = (Array.isArray(o.mons) ? o.mons : []).filter(m => m && ELS[m.el] && TRAITS[m.trait] && m.rar >= 0 && m.rar <= 3 && [m.bh, m.ba, m.sp].every(Number.isFinite)).map(m => {
     maxId = Math.max(maxId, m.id | 0);
-    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp, lock: !!m.lock, xp: Math.max(0, Number(m.xp) || 0) };
+    return { id: m.id | 0, name: String(m.name).slice(0, 24), icon: String(m.icon).slice(0, 4), el: m.el, rar: m.rar | 0, trait: m.trait, lvl: Math.min(MAX_LVL, Math.max(1, m.lvl | 0)), bh: m.bh, ba: m.ba, sp: m.sp, lock: !!m.lock, xp: Math.max(0, Number(m.xp) || 0), star: m.rar === 3 ? Math.min(5, Math.max(0, m.star | 0)) : 0 };
   });
   const ids = new Set(s.mons.map(m => m.id));
   s.team = (Array.isArray(o.team) ? o.team : []).filter((id, i, a) => ids.has(id) && a.indexOf(id) === i).slice(0, 3);
@@ -91,10 +91,12 @@ function sanitize(o) {
   s.ach = strs(o.ach, x => ACH.some(a => a.id === x));
   s.quest = Math.min(QUESTS.length, Math.floor(n(o.quest, 0))); s.fusions = Math.floor(n(o.fusions, 0)); s.fed = Math.floor(n(o.fed, 0));
   s.sweepAt = n(o.sweepAt, 0); s.daily = typeof o.daily === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.daily) ? o.daily : ''; s.streak = Math.floor(n(o.streak, 0));
+  s.ess = n(o.ess, 0);
+  for (const k of Object.keys(s.shop)) s.shop[k] = Math.min(SHOP[k].max || 1e4, Math.floor(n(o.shop && o.shop[k], 0)));
   s.trialDay = typeof o.trialDay === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(o.trialDay) ? o.trialDay : '';
   // expeditions: only known trip types, only monsters that still exist, never a team member
   const used = new Set();
-  s.exp = (Array.isArray(o.exp) ? o.exp : []).filter(x => x && EXP[x.k] && Array.isArray(x.mons) && Number.isFinite(x.start)).slice(0, 3).map(x => ({
+  s.exp = (Array.isArray(o.exp) ? o.exp : []).filter(x => x && EXP[x.k] && Array.isArray(x.mons) && Number.isFinite(x.start)).slice(0, 6).map(x => ({
     k: x.k, start: x.start, coins: n(x.coins, 0), egg: EXP[x.k].egg, mons: x.mons.filter(id => ids.has(id) && !used.has(id) && !s.team.includes(id) && used.add(id)).slice(0, 3),
   })).filter(x => x.mons.length);
   return s;
@@ -106,7 +108,7 @@ function save() { try { tick(); S.saved = Date.now(); localStorage.setItem(SAVE_
 const monById = id => S.mons.find(m => m.id === id);
 const teamMons = () => S.team.map(monById).filter(Boolean);
 const goldMul = () => 1 + 0.12 * teamMons().filter(m => m.trait === 'gold').length;
-const shardCoin = () => 1 + 0.05 * S.shards;
+const shardCoin = () => (1 + 0.05 * S.shards) * (1 + .1 * S.shop.greed);
 const rate = () => (1 + S.gen) * Math.pow(1.03, S.gen) * (1 + 0.05 * S.seen.length) * (1 + 0.05 * (S.best - 1)) * goldMul() * shardCoin();
 const genCostAt = g => Math.floor(25 * Math.pow(1.2, g));
 const lvCostAt = (m, l) => Math.floor(60 * Math.pow(1.2, l - 1) * RMUL[m.rar]);
@@ -152,7 +154,11 @@ const vib = p => { try { if (navigator.vibrate && (!navigator.userActivation || 
 const reward = f => Math.floor((15 * Math.pow(1.13, f - 1) * goldMul() * shardCoin() + rate() * 45) * (f % 10 === 0 ? 3 : 1));
 const shardGain = () => S.best < ASCEND_AT ? 0 : Math.floor(Math.pow(S.best - 20, 1.3) / 4);
 const stats = m => statsAt(m, m.lvl);
-function statsAt(m, lvl) { const k = Math.pow(1.045, lvl - 1) * (1 + 0.01 * S.shards); return { hp: Math.round(m.bh * k), atk: Math.round(m.ba * k), spd: Math.round(m.sp) }; }
+// level curve x shards x awakening stars x Soul Shop upgrades
+function statsAt(m, lvl) {
+  const k = Math.pow(1.045, lvl - 1) * (1 + 0.01 * S.shards) * (1 + .2 * (m.star || 0));
+  return { hp: Math.round(m.bh * k * (1 + .05 * S.shop.vit)), atk: Math.round(m.ba * k * (1 + .05 * S.shop.might)), spd: Math.round(m.sp) };
+}
 
 function tick() {
   const now = Date.now(); let dt = now - last; last = now;
@@ -182,7 +188,7 @@ function hud() {
   const dot = (t, on) => { const b = $(`#tabs [data-t="${t}"]`); if (b) b.classList.toggle('dot', on); };
   const goal = QUESTS[S.quest] && QUESTS[S.quest].done();
   dot('home', S.eggs.length > 0 || S.coins >= genCost() || goal || dailyReady() || ACH.some(achReady) || expReady());
-  dot('mons', canFuseAny());
+  dot('mons', canFuseAny() || Object.keys(SHOP).some(k => !(SHOP[k].max && S.shop[k] >= SHOP[k].max) && S.ess >= shopCost(k)));
   dot('tower', !!shardGain() || goal || trialReady() || (S.best > 1 && Date.now() >= S.sweepAt) || (!B && !S.team.length && S.mons.length > 0));
 }
 // any two unlocked-fodder monsters of same element + rarity below Legendary
@@ -313,9 +319,11 @@ function makeMon(egg) {
     bh: 50 * RMUL[rar] * pen * v(), ba: 8 * RMUL[rar] * pen * v(), sp: 8 + r() * 8 + rar,
   };
 }
-const eggQty = tier => qty === 'max' ? Math.max(1, Math.min(50, Math.floor(S.coins / EGG[tier].cost))) : qty;
+// egg prices follow income (10s / 5 min of mine output) so eggs stay a choice instead of a flood
+const eggCost = tier => tier === 'basic' ? Math.max(EGG.basic.cost, Math.floor(rate() * 10)) : Math.max(EGG.premium.cost, Math.floor(rate() * 300));
+const eggQty = tier => qty === 'max' ? Math.max(1, Math.min(50, Math.floor(S.coins / eggCost(tier)))) : qty;
 function buyEgg(tier) {
-  const n = eggQty(tier), c = EGG[tier].cost * n; if (S.coins < c) return;
+  const n = eggQty(tier), c = eggCost(tier) * n; if (S.coins < c) return;
   S.coins -= c;
   for (let i = 0; i < n; i++) {
     const el = tier === 'premium' && Math.random() < EGG.premium.dl ? (Math.random() < .5 ? 'dark' : 'light') : pick(Math.random, BASIC);
@@ -326,7 +334,7 @@ function buyEgg(tier) {
 function card(m, attrs = '', big = false, extra = '') {
   const s = stats(m);
   return `<div class="mon r${m.rar} el-${m.el}${big ? ' big' : ''}" ${attrs}><div class="rib">${RARS[m.rar]}</div>
-    <div class="art"><span class="ic">${monArt(m)}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${!big && busy(m.id) ? '<span class="tm away">AWAY</span>' : ''}${extra}</div>
+    <div class="art"><span class="ic">${monArt(m)}</span><span class="elb">${ELS[m.el].i}</span><span class="lv">Lv${m.lvl}</span>${m.star ? `<span class="star">${'★'.repeat(m.star)}</span>` : ''}${m.lock ? '<span class="lk">🔒</span>' : ''}${!big && S.team.includes(m.id) && cur !== 'tower' ? '<span class="tm">TEAM</span>' : ''}${!big && busy(m.id) ? '<span class="tm away">AWAY</span>' : ''}${extra}</div>
     <b class="nm">${esc(m.name)}</b><div class="st"><span>❤${fmt(s.hp)}</span><span>⚔${fmt(s.atk)}</span><span>⚡${s.spd}</span></div><div class="tr">${TRAITS[m.trait].n}</div></div>`;
 }
 function hatch(id) {
@@ -382,7 +390,7 @@ function fuse(aId, bId) {
 // ---------- feed ----------
 // sacrifice spare monsters for XP: worth about what they cost to get (egg price by rarity, more if levelled),
 // spent on the same curve as coin level-ups; leftover XP stays on the monster
-const feedXP = b => Math.floor(EGG.basic.cost * [1, 3, 10, 30][b.rar] * (1 + (b.lvl - 1) * .1));
+const feedXP = b => Math.floor(eggCost('basic') * [1, 3, 10, 30][b.rar] * (1 + (b.lvl - 1) * .1));
 function levelsFrom(a, xp) { let l = a.lvl, x = (a.xp || 0) + xp; while (l < MAX_LVL && x >= lvCostAt(a, l)) { x -= lvCostAt(a, l); l++; } return { l, x }; }
 const spare = a => S.mons.filter(b => b !== a && !b.lock && !S.team.includes(b.id) && !busy(b.id));
 function feedMenu(id) {
@@ -483,6 +491,52 @@ function dailyCard() {
     <div class="ctl"><button data-act="daily">Open chest</button></div></section>`;
 }
 
+// ---------- soul altar ----------
+// release spare monsters for 🔮 essence, spend it on permanent upgrades; awaken Legendaries with stars
+const ESS = [1, 5, 25, 100];
+const essOf = m => Math.floor(ESS[m.rar] * (1 + m.lvl / 50) * (1 + (m.star || 0) * .5));
+const SHOP = {
+  might: { n: '💪 Might', d: '+5% monster ATK', base: 50 },
+  vit: { n: '❤️ Vitality', d: '+5% monster HP', base: 50 },
+  greed: { n: '🪙 Greed', d: '+10% coins', base: 80 },
+  slots: { n: '🧭 Explorer', d: '+1 expedition slot', base: 500, max: 3 },
+};
+const shopCost = k => Math.floor(SHOP[k].base * Math.pow(k === 'slots' ? 4 : 1.35, S.shop[k]));
+const expSlots = () => 3 + S.shop.slots;
+const releasable = m => !m.lock && !S.team.includes(m.id) && !busy(m.id);
+function release(list, what) {
+  if (!list.length) return;
+  const e = list.reduce((t, m) => t + essOf(m), 0);
+  if (!confirm(`Release ${list.length} ${what} for 🔮${fmt(e)}? They will be gone.`)) return;
+  const ids = new Set(list.map(m => m.id)); S.mons = S.mons.filter(m => !ids.has(m.id)); S.ess += e;
+  S.changed = Date.now(); save(); closeModal(); render(); toast(`Released ${list.length}: +🔮${fmt(e)}`);
+}
+function buyShop(k) {
+  const c = shopCost(k); if (S.ess < c || (SHOP[k].max && S.shop[k] >= SHOP[k].max)) return;
+  S.ess -= c; S.shop[k]++; S.changed = Date.now(); save(); render(); toast(`${SHOP[k].n} → Lv${S.shop[k]}`);
+}
+function altarCard() {
+  const by = [0, 1, 2, 3].map(r => S.mons.filter(m => m.rar === r && releasable(m)));
+  return `<section class="card"><h3>🔮 Soul Altar · ${fmt(S.ess)}</h3>
+    <p style="text-align:center">Release spare monsters for essence. Team, 🔒 locked and away monsters are safe.</p>
+    <div class="rel">${by.map((l, r) => `<button class="btn alt" data-act="release" data-r="${r}" ${l.length ? '' : 'disabled'}>${RARS[r]} ×${l.length}<small>+🔮${fmt(l.reduce((t, m) => t + essOf(m), 0))}</small></button>`).join('')}</div>
+    ${Object.keys(SHOP).map(k => { const maxed = SHOP[k].max && S.shop[k] >= SHOP[k].max, c = shopCost(k);
+      return `<div class="ach"><span>${SHOP[k].n} · Lv${S.shop[k]}<small>${SHOP[k].d} per level</small></span>${maxed ? '<small>MAX</small>' : `<button data-act="shop" data-k="${k}" ${S.ess >= c ? '' : 'disabled'}>🔮${fmt(c)}</button>`}</div>`; }).join('')}</section>`;
+}
+function awakenMenu(id) {
+  const a = monById(id); if (!a || a.rar < 3 || (a.star || 0) >= 5) return;
+  const l = S.mons.filter(b => b !== a && b.rar === 3 && b.el === a.el && releasable(b)).sort((x, y) => (x.star || 0) - (y.star || 0) || x.lvl - y.lvl);
+  modal(`<h3>⭐ Awaken ${esc(a.name)}</h3><p style="text-align:center">★${a.star || 0} → ★${(a.star || 0) + 1}: +20% HP and ATK per star (max ★5).<br>Sacrifice another ${ELS[a.el].i} Legendary.</p>
+    ${l.length ? `<button data-act="awaken" data-a="${a.id}" data-b="${l[0].id}">Use ${esc(l[0].name)} (Lv${l[0].lvl})</button>` : '<p style="text-align:center">No spare Legendary of this element.</p>'}
+    <button class="btn alt" data-act="mon" data-id="${a.id}">Back</button>`);
+}
+function awaken(aId, bId) {
+  const a = monById(aId), b = monById(bId);
+  if (!a || !b || a === b || a.rar < 3 || b.rar < 3 || a.el !== b.el || !releasable(b) || (a.star || 0) >= 5) return;
+  S.mons = S.mons.filter(m => m !== b); a.star = (a.star || 0) + 1; S.changed = Date.now(); save(); render(); SFX.hatch(3);
+  modal(`<h3>Awakened! ★${a.star}</h3>${reveal(a)}<button data-act="close">Nice!</button>`);
+}
+
 // ---------- expeditions ----------
 // send spare monsters away; they come back with coins (and eggs on longer trips). Timestamps, so it runs offline.
 const EXP = {
@@ -506,7 +560,7 @@ function expMenu() {
 }
 function expSend() {
   const party = expPick.ids.map(monById).filter(m => m && !S.team.includes(m.id) && !busy(m.id));
-  if (!party.length || S.exp.length >= 3) return;
+  if (!party.length || S.exp.length >= expSlots()) return;
   S.exp.push({ k: expPick.k, start: Date.now(), coins: expCoins(expPick.k, party), egg: EXP[expPick.k].egg, mons: party.map(m => m.id) });
   expPick.ids = []; save(); closeModal(); render(); toast(`Party left on a ${EXP[S.exp[S.exp.length - 1].k].n}`);
 }
@@ -518,11 +572,11 @@ function expClaim(i) {
 }
 const fmtLeft = ms => { if (ms <= 0) return 'Done!'; const m = Math.ceil(ms / 60e3); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
 function expCard() {
-  return `<section class="card"><h3>🧭 Expeditions ${S.exp.length}/3</h3>${S.exp.map((x, i) => {
+  return `<section class="card"><h3>🧭 Expeditions ${S.exp.length}/${expSlots()}</h3>${S.exp.map((x, i) => {
     const left = expLeft(x), pct = Math.min(100, 100 - left / EXP[x.k].dur * 100);
     return `<div class="ach"><span><b class="party">${x.mons.map(monById).filter(Boolean).map(m => `<i class="mini">${monArt(m)}</i>`).join('')} ${EXP[x.k].n}</b><small>${fmtLeft(left)} · 🪙${fmt(x.coins)}${x.egg ? (x.egg === 'premium' ? ' + 🪺' : ' + 🥚') : ''}</small>
       <div class="bar"><i style="width:${pct}%"></i></div></span>${left <= 0 ? `<button data-act="expclaim" data-i="${i}">Claim</button>` : ''}</div>`;
-  }).join('')}${S.exp.length < 3 ? '<div class="ctl"><button data-act="expmenu">Send a party</button></div>' : ''}</section>`;
+  }).join('')}${S.exp.length < expSlots() ? '<div class="ctl"><button data-act="expmenu">Send a party</button></div>' : ''}</section>`;
 }
 
 // ---------- daily trial ----------
@@ -808,8 +862,8 @@ function vHome() {
     <div style="text-align:center"><div class="big-num">+${fmtRate(rate())}/s</div><p>+1/s per level · +5% per species discovered</p></div>
     ${qtyChips()}<div class="ctl">${(() => { const g = bulk(genCostAt, S.gen); return `<button data-act="gen" data-cost="${g.c}">Upgrade${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`; })()}</div></section>
   <section class="card"><h3>🥚 Hatchery</h3><div class="shop">
-    <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${EGG.basic.cost * eggQty('basic')}">${eggQty('basic') > 1 ? '×' + eggQty('basic') + ' · ' : ''}🪙 ${fmt(EGG.basic.cost * eggQty('basic'))}</button></div>
-    <div class="prem"><div class="eggb">🪺</div><b>Premium Egg</b><small>Better rarity · 3% 🌑/✨</small><button data-act="buy" data-tier="premium" data-cost="${EGG.premium.cost * eggQty('premium')}">${eggQty('premium') > 1 ? '×' + eggQty('premium') + ' · ' : ''}🪙 ${fmt(EGG.premium.cost * eggQty('premium'))}</button></div>
+    <div><div class="eggb">🥚</div><b>Basic Egg</b><small>Fire · Grass · Water</small><button data-act="buy" data-tier="basic" data-cost="${eggCost('basic') * eggQty('basic')}">${eggQty('basic') > 1 ? '×' + eggQty('basic') + ' · ' : ''}🪙 ${fmt(eggCost('basic') * eggQty('basic'))}</button></div>
+    <div class="prem"><div class="eggb">🪺</div><b>Premium Egg</b><small>Better rarity · 3% 🌑/✨</small><button data-act="buy" data-tier="premium" data-cost="${eggCost('premium') * eggQty('premium')}">${eggQty('premium') > 1 ? '×' + eggQty('premium') + ' · ' : ''}🪙 ${fmt(eggCost('premium') * eggQty('premium'))}</button></div>
   </div></section>
   <section class="card"><h3>🪹 Nest (${S.eggs.length})</h3><p style="text-align:center">Tap an egg to hatch. Element shown, rarity is a surprise.</p>
     <div class="eggs">${eg || '<p>Empty nest. Buy an egg above.</p>'}</div>
@@ -823,7 +877,7 @@ function vMons() {
   const chip = (act, k, v, label) => `<button class="${v === k ? 'on' : ''}" data-act="${act}" data-k="${k}">${label}</button>`;
   const best = `<section class="card"><h3>📖 Bestiary ${S.seen.length}/${SPECIES.length}</h3><div class="bestiary">${SPECIES.map(k => S.seen.includes(k) ? `<span class="el-${k.split(':')[0]}">${sheetReady ? sprite(k.split(':')[0], k.split(':')[1], hashStr(k), 0) : art(k.split(':')[0], k.split(':')[1], hashStr(k))}</span>` : '<span class="unseen">❔</span>').join('')}</div>
     <p style="text-align:center">Each new species: +💎1</p></section>`;
-  return `${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
+  return `${altarCard()}${best}<div class="chips">${chip('monel', 'all', monEl, 'All')}${Object.keys(ELS).map(e => chip('monel', e, monEl, ELS[e].i)).join('')}</div>
   <div class="chips">${chip('monsort', 'rar', monSort, 'Rarity')}${chip('monsort', 'lvl', monSort, 'Level')}${chip('monsort', 'pow', monSort, 'Power')}</div>
   <p>${l.length} of ${S.mons.length} · tap for details, level up, feed, fuse</p><div class="grid">${l.slice(0, monShow).map(m => card(m, `data-act="mon" data-id="${m.id}"`)).join('')}</div>
   ${l.length > monShow ? `<div class="ctl"><button class="btn alt" data-act="monmore">Show more (${l.length - monShow} left)</button></div>` : ''}`;
@@ -880,7 +934,8 @@ function detail(id) {
     <button data-act="lvl" data-id="${m.id}" data-cost="${g.c}">Level up${g.k > 1 ? ' ×' + g.k : ''} · 🪙${fmt(g.c)}</button>`}
     <button class="btn alt" data-act="lock" data-id="${m.id}">${m.lock ? '🔓 Unlock' : '🔒 Lock (protect from fusion)'}</button>
     ${m.lvl < MAX_LVL ? `<button data-act="feedmenu" data-id="${m.id}">🍖 Feed spare monsters</button>` : ''}
-    ${m.rar < 3 ? `<button data-act="fusemenu" data-id="${m.id}">Fuse → ${RARS[m.rar + 1]}</button>` : ''}
+    ${m.rar < 3 ? `<button data-act="fusemenu" data-id="${m.id}">Fuse → ${RARS[m.rar + 1]}</button>` : (m.star || 0) < 5 ? `<button data-act="awakenmenu" data-id="${m.id}">⭐ Awaken ★${(m.star || 0) + 1}</button>` : ''}
+    ${releasable(m) ? `<button class="btn alt" data-act="releaseone" data-id="${m.id}">Release for 🔮${fmt(essOf(m))}</button>` : ''}
     <button class="btn alt" data-act="close">Close</button>`, false, m.id);
 }
 function picker(i) {
@@ -892,7 +947,13 @@ function autoPick() {
   // power x (damage dealt / damage taken) against this floor's enemies
   const E = enemies(S.floor), avg = f => E.reduce((t, u) => t + f(u), 0) / E.length;
   const pw = m => { const s = stats(m); return s.hp * s.atk * avg(u => mult(m.el, u.el)) / avg(u => mult(u.el, m.el)); };
-  S.team = S.mons.filter(m => !busy(m.id)).sort((a, b) => pw(b) - pw(a)).slice(0, 3).map(m => m.id); save(); render();
+  // score once per monster, then keep the best 3 (big collections stay fast)
+  const away = new Set(S.exp.flatMap(x => x.mons)), top = [];
+  for (const m of S.mons) {
+    if (away.has(m.id)) continue;
+    const sc = pw(m); top.push([sc, m.id]); top.sort((a, b) => b[0] - a[0]); if (top.length > 3) top.pop();
+  }
+  S.team = top.map(t => t[1]); save(); render();
 }
 
 const ACT = {
@@ -929,6 +990,11 @@ const ACT = {
   expk: d => { expPick.k = d.k; expMenu(); },
   exptog: d => { const id = +d.id, i = expPick.ids.indexOf(id); if (i >= 0) expPick.ids.splice(i, 1); else if (expPick.ids.length < 3) expPick.ids.push(id); expMenu(); },
   expgo: expSend,
+  release: d => release(S.mons.filter(m => m.rar === +d.r && releasable(m)), `spare ${RARS[+d.r]}s`),
+  releaseone: d => { const m = monById(+d.id); if (m && releasable(m)) release([m], m.name); },
+  shop: d => buyShop(d.k),
+  awakenmenu: d => awakenMenu(+d.id),
+  awaken: d => awaken(+d.a, +d.b),
   expclaim: d => expClaim(+d.i),
   skip,
   speed: cycleSpeed,
@@ -954,7 +1020,7 @@ const ACT = {
   },
 };
 // acts that change progress; marks the save dirty for cloud sync
-const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock', 'feed', 'feedall', 'sweep', 'goal', 'ach', 'daily', 'expgo', 'expclaim']);
+const MUTATE = new Set(['buy', 'gen', 'hatch', 'hatchall', 'lvl', 'pick', 'clear', 'auto', 'fight', 'fuse', 'import', 'reset', 'ascend', 'lock', 'feed', 'feedall', 'sweep', 'goal', 'ach', 'daily', 'expgo', 'expclaim', 'release', 'releaseone', 'shop', 'awaken']);
 document.addEventListener('click', e => {
   if (e.target.id === 'modal' && !e.target.dataset.lock) return closeModal();
   const b = e.target.closest('[data-act]'); if (!b || b.disabled) return;
@@ -976,11 +1042,11 @@ loadSheet();
 
 // ---------- what's new ----------
 // shown once per device after an update; brand-new players skip it
-const NEWS_VER = 23, NEWS = [
-  '🎨 Brand-new monster art! Every monster is built from real drawn parts',
-  '🖼️ Golden framed panels everywhere',
-  '⚡ Live battles: tap a glowing monster to fire its skill',
-  '🧭 Expeditions and 🏟️ a Daily Trial for extra rewards',
+const NEWS_VER = 26, NEWS = [
+  '🔮 Soul Altar (Monsters tab): release spare monsters for essence',
+  '💪 Spend essence on permanent ATK, HP, coins and expedition slots',
+  '⭐ Awaken Legendaries up to ★5 (+20% stats per star)',
+  '🥚 Egg prices now grow with your income',
 ];
 try {
   const seenVer = +localStorage.getItem('imt_news') || 0;

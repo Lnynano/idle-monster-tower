@@ -68,5 +68,15 @@ t('expeditions survive save/load, ghosts dropped', `addMon(makeMon({ el: 'fire',
   return s.exp.length === 1 && s.exp[0].mons.length === 1 && s.exp[0].mons[0] === id;`);
 t('daily trial: one element, reward once', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 100; m.rar = 3; m.bh *= 5; m.ba *= 5; addMon(m);
   const E = trialEnemies(); const same = E.every(u => u.el === trialEl()); fight('trial'); skip(); const ok = B.win && S.shards >= 3 && !trialReady(); B = null; fight('trial'); return same && ok && B === null && S.floor === 1;`);
+t('release spares for essence, team safe', `for (let i = 0; i < 6; i++) { const m = makeMon({ el: 'fire', tier: 'basic' }); m.rar = 3; addMon(m); }
+  const team = S.team.slice(); const want = S.mons.filter(m => releasable(m)).reduce((t, m) => t + essOf(m), 0); release(S.mons.filter(m => m.rar === 3 && releasable(m)), 'x'); return S.mons.length === 3 && team.every(id => monById(id)) && S.ess === want && want >= 300;`);
+t('soul shop raises stats and coins', `const m = makeMon({ el: 'fire', tier: 'basic' }); m.lvl = 80; S.mons.push(m); const a = stats(m).atk, r = rate(); S.ess = 1e6; buyShop('might'); buyShop('greed');
+  return stats(m).atk > a && rate() > r && S.shop.might === 1 && S.ess < 1e6;`);
+t('explorer slot cap', `S.ess = 1e9; for (let i = 0; i < 10; i++) buyShop('slots'); return S.shop.slots === 3 && expSlots() === 6;`);
+t('awaken adds a star, consumes a Legendary', `const a = makeMon({ el: 'water', tier: 'basic' }), b = makeMon({ el: 'water', tier: 'basic' }); a.rar = b.rar = 3; S.mons.push(a, b); const h = stats(a).hp;
+  awaken(a.id, b.id); return a.star === 1 && S.mons.length === 1 && stats(a).hp > h;`);
+t('egg price follows income', `const lo = eggCost('premium'); S.gen = 200; return lo === 4000 && eggCost('premium') > 4000;`);
+t('stars and essence survive save', `const a = makeMon({ el: 'water', tier: 'basic' }); a.rar = 3; a.star = 9; S.mons.push(a); S.ess = 77; S.shop.slots = 99; const s = sanitize(JSON.parse(JSON.stringify(S)));
+  return s.mons[0].star === 5 && s.ess === 77 && s.shop.slots === 3;`);
 console.log(`${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
